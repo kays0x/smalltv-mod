@@ -39,6 +39,22 @@ class RemoteTests(unittest.TestCase):
         document['agents']['codex']['active'] = 2
         self.assertEqual(sanitize(document, 100, 45)['codex']['count'], '2 active')
 
+    def test_question_wait_is_sanitized_and_can_coexist_with_work(self):
+        document = sample()
+        document['agents']['claude'].update(status='WAITING', waiting=1, active=1,
+                                           detail='Answer needed', count='SECRET')
+        result = sanitize(document, 100, 45)['claude']
+        self.assertEqual((result['status'], result['count'], result['tone']), ('WAITING', '1 waiting', 2))
+        self.assertEqual((result['active'], result['waiting']), (1, 1))
+        self.assertNotIn('SECRET', json.dumps(result))
+
+    def test_waiting_state_and_count_must_agree(self):
+        for status, waiting in [('WAITING', 0), ('IDLE', 1), ('WAITING', True), ('WAITING', 33)]:
+            document = sample()
+            document['agents']['claude'].update(status=status, waiting=waiting)
+            with self.assertRaises(ValueError):
+                sanitize(document, 100, 45)
+
     def test_all_three_pages_include_host_and_provider_names(self):
         idle = unavailable()
         local = {'claude': idle, 'codex': idle}

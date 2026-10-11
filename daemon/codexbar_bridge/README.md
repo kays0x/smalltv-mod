@@ -80,6 +80,10 @@ also expire after 45 seconds. The Mac must remain awake to collect and serve.
   `task_failed` end the matching turn. Turn end is **not proof of task success**.
 - Claude user prompts begin work; tool-result records do not restart elapsed
   time. Assistant `end_turn` and system `turn_duration` records end a turn.
+  An unanswered `AskUserQuestion` shows `WAITING` and `Answer needed`, including
+  after the 15-minute work cutoff. A matching tool result resumes work; a new
+  user prompt or turn end clears the wait. Waiting sessions take display
+  priority over working sessions. Question text and choices are never exported.
 - Pi user messages begin work. Assistant `toolUse` and tool-result records retain
   work; `stop`, `error`, and `aborted` end the turn. Trace files are excluded so
   they do not duplicate native session records.
@@ -92,7 +96,7 @@ also expire after 45 seconds. The Mac must remain awake to collect and serve.
   files and sidechain records are not included in this first version.
 - Transcript formats can change. They are not a stable public interface.
   Lifecycle hooks or app-server events are a future replacement for this
-  adapter. Approval-wait state and true completion percentages are not inferred.
+  adapter. Generic permission waits and true completion percentages are not inferred.
 - VPS agents are not connected by default. Enable the collector above to include
   them. Remote adapters have the same bounded lookback and lifecycle limitations.
 - The host must remain awake. If it becomes unreachable, theme firmware retains

@@ -7,7 +7,7 @@ import time
 from activity import display_text
 
 PROVIDERS = ('claude', 'codex', 'pi')
-STATUSES = {'WORKING', 'IDLE', 'UNKNOWN', 'OFFLINE'}
+STATUSES = {'WORKING', 'WAITING', 'IDLE', 'UNKNOWN', 'OFFLINE'}
 
 
 def unavailable(detail='VPS unreachable'):
@@ -31,11 +31,18 @@ def sanitize(document, now, max_age):
         active = row.get('active')
         if not isinstance(active, int) or isinstance(active, bool) or not 0 <= active <= 32:
             raise ValueError('Remote snapshot has an invalid count')
-        if (row['status'] == 'WORKING') != (active > 0):
+        waiting = row.get('waiting', 0)
+        if (not isinstance(waiting, int) or isinstance(waiting, bool) or not 0 <= waiting <= 32
+                or active + waiting > 32):
+            raise ValueError('Remote snapshot has an invalid waiting count')
+        if (row['status'] == 'WAITING') != (waiting > 0):
+            raise ValueError('Remote state and waiting count disagree')
+        if row['status'] != 'WAITING' and (row['status'] == 'WORKING') != (active > 0):
             raise ValueError('Remote state and active count disagree')
         result[provider] = {key: display_text(row.get(key, '')) for key in ('elapsed', 'project', 'detail')}
-        result[provider].update(status=row['status'], active=active, count=f'{active} active',
-                                tone=1 if active else (2 if row['status'] in ('UNKNOWN', 'OFFLINE') else 0))
+        result[provider].update(status=row['status'], active=active, waiting=waiting,
+                                count=f'{waiting} waiting' if waiting else f'{active} active',
+                                tone=2 if waiting or row['status'] in ('UNKNOWN', 'OFFLINE') else (1 if active else 0))
     return result
 
 

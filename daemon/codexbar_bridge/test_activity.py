@@ -13,6 +13,17 @@ def codex(event, when=T0, turn='one'):
     return {'type': 'event_msg', 'timestamp': when, 'payload': {'type': event, 'turn_id': turn}}
 
 
+def question(tool_id='question', when=T1):
+    return {'type': 'assistant', 'timestamp': when, 'message': {'stop_reason': 'tool_use',
+            'content': [{'type': 'tool_use', 'name': 'AskUserQuestion', 'id': tool_id,
+                         'input': {'questions': 'SECRET QUESTION'}}]}}
+
+
+def answer(tool_id='question'):
+    return {'type': 'user', 'timestamp': T1, 'message': {'content': [
+            {'type': 'tool_result', 'tool_use_id': tool_id, 'content': 'SECRET ANSWER'}]}}
+
+
 class ActivityTests(unittest.TestCase):
     def test_valid_json_with_wrong_shape_is_ignored(self):
         s = Session('codex')
@@ -53,6 +64,68 @@ class ActivityTests(unittest.TestCase):
         s.apply({'type': 'user', 'timestamp': T0, 'message': {'content': 'task'}})
         s.apply({'type': 'system', 'subtype': 'turn_duration', 'isMeta': True, 'timestamp': T1})
         self.assertEqual(s.state, 'idle')
+
+    def test_question_wait_requires_its_own_result_and_preserves_turn_start(self):
+        s = Session('claude')
+        s.apply({'type': 'user', 'timestamp': T0, 'message': {'content': 'task'}})
+        s.apply(question())
+        self.assertEqual((s.state, s.activity), ('waiting', 'Answer needed'))
+        s.apply(answer('unrelated'))
+        self.assertEqual(s.state, 'waiting')
+        s.apply(answer())
+        self.assertEqual((s.state, s.started), ('working', timestamp(T0)))
+        self.assertEqual(s.questions, set())
+
+    def test_question_wait_survives_long_silence_without_exporting_content(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            project = root / 'project'
+            project.mkdir()
+            (project / 'session.jsonl').write_text(json.dumps(question()) + '\n')
+            result = Activity({'claude': root}).snapshot('claude', timestamp(T1) + 3600)
+            self.assertEqual((result['status'], result['detail'], result['count']),
+                             ('WAITING', 'Answer needed', '1 waiting'))
+            self.assertEqual((result['active'], result['waiting'], result['tone']), (0, 1, 2))
+            self.assertNotIn('SECRET', json.dumps(result))
+
+    def test_multiple_questions_wait_until_all_results_arrive(self):
+        s = Session('claude')
+        s.apply(question('one'))
+        s.apply(question('two'))
+        s.apply(answer('one'))
+        self.assertEqual(s.state, 'waiting')
+        s.apply(answer('two'))
+        self.assertEqual(s.state, 'working')
+
+    def test_question_wait_clears_on_new_prompt_or_turn_end(self):
+        endings = [{'type': 'user', 'timestamp': T1, 'message': {'content': 'new task'}},
+                   {'type': 'assistant', 'timestamp': T1, 'message': {'stop_reason': 'end_turn'}},
+                   {'type': 'system', 'timestamp': T1, 'subtype': 'turn_duration'}]
+        for row in endings:
+            s = Session('claude')
+            s.apply(question())
+            s.apply(row)
+            self.assertFalse(s.questions)
+            self.assertEqual(s.state, 'working' if row['type'] == 'user' else 'idle')
+
+    def test_sidechain_questions_do_not_block_parent(self):
+        s = Session('claude')
+        row = question()
+        row['isSidechain'] = True
+        s.apply(row)
+        self.assertFalse(s.questions)
+
+    def test_question_wait_takes_priority_over_other_work_and_keeps_active_count(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            project = root / 'project'
+            project.mkdir()
+            (project / 'waiting.jsonl').write_text(json.dumps(question()) + '\n')
+            working = {'type': 'user', 'timestamp': T1, 'message': {'content': 'task'}}
+            (project / 'working.jsonl').write_text(json.dumps(working) + '\n')
+            result = Activity({'claude': root}).snapshot('claude', timestamp(T1) + 30)
+            self.assertEqual((result['status'], result['active'], result['waiting']), ('WAITING', 1, 1))
+            self.assertEqual(result['detail'], 'Answer needed')
 
     def test_missing_source_is_offline(self):
         with tempfile.TemporaryDirectory() as folder:

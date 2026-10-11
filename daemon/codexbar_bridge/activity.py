@@ -42,6 +42,7 @@ class Session:
         self.updated = 0
         self.project = '--'
         self.activity = 'No lifecycle event'
+        self.questions = set()
 
     def apply(self, row):
         if not isinstance(row, dict):
@@ -90,18 +91,36 @@ class Session:
             if kind == 'user':
                 is_result = any(isinstance(b, dict) and b.get('type') == 'tool_result' for b in blocks)
                 if not is_result:
+                    self.questions.clear()
                     self.state, self.started = 'working', when
                     self.activity = 'Turn started'
-                elif self.state == 'working':
-                    self.activity = 'Last: tool result'
+                else:
+                    answered = {b.get('tool_use_id') for b in blocks
+                                if isinstance(b, dict) and b.get('type') == 'tool_result'
+                                and isinstance(b.get('tool_use_id'), str)}
+                    resolved = self.questions.intersection(answered)
+                    self.questions.difference_update(answered)
+                    if self.questions:
+                        self.state, self.activity = 'waiting', 'Answer needed'
+                    elif resolved or self.state == 'working':
+                        self.state, self.activity = 'working', 'Last: tool result'
                 self.updated = max(self.updated, when)
             elif kind == 'assistant' and isinstance(message, dict):
                 if message.get('stop_reason') == 'end_turn':
+                    self.questions.clear()
                     self.state, self.activity = 'idle', 'Turn ended'
                 elif any(isinstance(b, dict) and b.get('type') == 'tool_use' for b in blocks):
-                    self.activity = 'Last: tool'
+                    self.questions.update(b['id'] for b in blocks
+                                          if isinstance(b, dict) and b.get('type') == 'tool_use'
+                                          and b.get('name') == 'AskUserQuestion'
+                                          and isinstance(b.get('id'), str) and b['id'])
+                    if self.questions:
+                        self.state, self.activity = 'waiting', 'Answer needed'
+                    else:
+                        self.activity = 'Last: tool'
                 self.updated = max(self.updated, when)
             elif kind == 'system' and row.get('subtype') == 'turn_duration':
+                self.questions.clear()
                 self.state, self.activity = 'idle', 'Turn ended'
                 self.updated = max(self.updated, when)
         elif provider == 'pi' and kind == 'message':
@@ -200,15 +219,18 @@ class Activity:
         self.cache = {key: value for key, value in self.cache.items()
                       if key[0] != provider or key in retained}
         working = [s for s in sessions if s.state == 'working' and now - s.updated <= ACTIVE_GRACE]
+        waiting = [s for s in sessions if s.state == 'waiting']
         uncertain = [s for s in sessions if s.state == 'unknown'
                      or (s.state == 'working' and now - s.updated > ACTIVE_GRACE)]
-        pool = working or uncertain or sessions
+        pool = waiting or working or uncertain or sessions
         latest = max(pool, key=lambda s: s.updated) if pool else None
-        status = 'WORKING' if working else ('UNKNOWN' if uncertain else ('IDLE' if root.is_dir() else 'OFFLINE'))
+        status = ('WAITING' if waiting else ('WORKING' if working else
+                  ('UNKNOWN' if uncertain else ('IDLE' if root.is_dir() else 'OFFLINE'))))
         detail = latest.activity if latest else ('No recent activity' if root.is_dir() else 'Source unavailable')
-        if uncertain and not working:
+        if uncertain and not working and not waiting:
             detail = 'No recent lifecycle signal'
-        return {'status': status, 'count': f'{len(working)} active',
-                'elapsed': elapsed_text(now - latest.started) if working and latest.started else '',
+        return {'status': status, 'count': f'{len(waiting)} waiting' if waiting else f'{len(working)} active',
+                'elapsed': elapsed_text(now - latest.started) if working and not waiting and latest.started else '',
                 'project': latest.project if latest else '--', 'detail': display_text(detail),
-                'active': len(working), 'tone': 1 if working else (2 if uncertain else 0)}
+                'active': len(working), 'waiting': len(waiting),
+                'tone': 2 if waiting else (1 if working else (2 if uncertain else 0))}
