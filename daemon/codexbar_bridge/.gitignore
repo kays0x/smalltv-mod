@@ -1,0 +1,5 @@
+config.json
+status.json
+*.log
+.*.tmp
+output/

@@ -1,0 +1,320 @@
+{
+  "spec": 1,
+  "theme": {
+    "id": "agent-work",
+    "name": "Agent Work",
+    "author": "SmallTV fork",
+    "version": "1.0.0"
+  },
+  "display": {
+    "width": 240,
+    "height": 240,
+    "background": "#000000"
+  },
+  "data": [
+    {
+      "id": "claude",
+      "url": "http://192.0.2.10:9879/agent-claude.json",
+      "interval": 10,
+      "fields": [
+        {
+          "id": "status",
+          "path": "status"
+        },
+        {
+          "id": "count",
+          "path": "count"
+        },
+        {
+          "id": "elapsed",
+          "path": "elapsed"
+        },
+        {
+          "id": "project",
+          "path": "project"
+        },
+        {
+          "id": "detail",
+          "path": "detail"
+        },
+        {
+          "id": "active",
+          "path": "active"
+        },
+        {
+          "id": "tone",
+          "path": "tone"
+        },
+        {
+          "id": "stamp",
+          "path": "stamp"
+        }
+      ]
+    },
+    {
+      "id": "codex",
+      "url": "http://192.0.2.10:9879/agent-codex.json",
+      "interval": 10,
+      "fields": [
+        {
+          "id": "status",
+          "path": "status"
+        },
+        {
+          "id": "count",
+          "path": "count"
+        },
+        {
+          "id": "elapsed",
+          "path": "elapsed"
+        },
+        {
+          "id": "project",
+          "path": "project"
+        },
+        {
+          "id": "detail",
+          "path": "detail"
+        },
+        {
+          "id": "active",
+          "path": "active"
+        },
+        {
+          "id": "tone",
+          "path": "tone"
+        },
+        {
+          "id": "stamp",
+          "path": "stamp"
+        }
+      ]
+    }
+  ],
+  "layers": [
+    {
+      "id": "heading",
+      "type": "text",
+      "x": 8,
+      "y": 8,
+      "value": "AGENTS",
+      "size": 24,
+      "color": "#ffffff",
+      "anchor": "top-left"
+    },
+    {
+      "id": "stamp",
+      "type": "text",
+      "x": 228,
+      "y": 16,
+      "value": "{codex.stamp}",
+      "size": 12,
+      "color": "#b0aea5",
+      "anchor": "top-right"
+    },
+    {
+      "id": "claude-panel",
+      "type": "shape",
+      "shape": "rectangle",
+      "x": 8,
+      "y": 38,
+      "width": 224,
+      "height": 96,
+      "cornerRadius": 8,
+      "fill": "#1f1f1e"
+    },
+    {
+      "id": "claude-title",
+      "type": "text",
+      "x": 20,
+      "y": 46,
+      "value": "CLAUDE",
+      "size": 16,
+      "color": "#d97757",
+      "anchor": "top-left"
+    },
+    {
+      "id": "claude-count",
+      "type": "text",
+      "x": 220,
+      "y": 46,
+      "value": "{claude.count}",
+      "size": 16,
+      "color": "#b0aea5",
+      "anchor": "top-right"
+    },
+    {
+      "id": "claude-status",
+      "type": "text",
+      "x": 20,
+      "y": 70,
+      "value": "{claude.status}",
+      "size": 24,
+      "color": "#ffffff",
+      "anchor": "top-left",
+      "bind": {
+        "color": {
+          "source": "claude.tone",
+          "stops": [
+            {
+              "at": 0,
+              "value": "#b0aea5"
+            },
+            {
+              "at": 1,
+              "value": "#86e2bf"
+            },
+            {
+              "at": 2,
+              "value": "#f0b429"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "claude-elapsed",
+      "type": "text",
+      "x": 220,
+      "y": 74,
+      "value": "{claude.elapsed}",
+      "size": 16,
+      "color": "#b0aea5",
+      "anchor": "top-right"
+    },
+    {
+      "id": "claude-project",
+      "type": "text",
+      "x": 20,
+      "y": 100,
+      "value": "{claude.project}",
+      "size": 16,
+      "color": "#ffffff",
+      "anchor": "top-left",
+      "scroll": {
+        "width": 200,
+        "mode": "bounce",
+        "speed": 20,
+        "pause": 1000
+      }
+    },
+    {
+      "id": "claude-detail",
+      "type": "text",
+      "x": 20,
+      "y": 120,
+      "value": "{claude.detail}",
+      "size": 12,
+      "color": "#b0aea5",
+      "anchor": "top-left",
+      "scroll": {
+        "width": 200,
+        "mode": "bounce",
+        "speed": 20,
+        "pause": 1000
+      }
+    },
+    {
+      "id": "codex-panel",
+      "type": "shape",
+      "shape": "rectangle",
+      "x": 8,
+      "y": 140,
+      "width": 224,
+      "height": 96,
+      "cornerRadius": 8,
+      "fill": "#1f1f1e"
+    },
+    {
+      "id": "codex-title",
+      "type": "text",
+      "x": 20,
+      "y": 148,
+      "value": "CODEX",
+      "size": 16,
+      "color": "#7dc5ff",
+      "anchor": "top-left"
+    },
+    {
+      "id": "codex-count",
+      "type": "text",
+      "x": 220,
+      "y": 148,
+      "value": "{codex.count}",
+      "size": 16,
+      "color": "#b0aea5",
+      "anchor": "top-right"
+    },
+    {
+      "id": "codex-status",
+      "type": "text",
+      "x": 20,
+      "y": 172,
+      "value": "{codex.status}",
+      "size": 24,
+      "color": "#ffffff",
+      "anchor": "top-left",
+      "bind": {
+        "color": {
+          "source": "codex.tone",
+          "stops": [
+            {
+              "at": 0,
+              "value": "#b0aea5"
+            },
+            {
+              "at": 1,
+              "value": "#86e2bf"
+            },
+            {
+              "at": 2,
+              "value": "#f0b429"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "codex-elapsed",
+      "type": "text",
+      "x": 220,
+      "y": 176,
+      "value": "{codex.elapsed}",
+      "size": 16,
+      "color": "#b0aea5",
+      "anchor": "top-right"
+    },
+    {
+      "id": "codex-project",
+      "type": "text",
+      "x": 20,
+      "y": 202,
+      "value": "{codex.project}",
+      "size": 16,
+      "color": "#ffffff",
+      "anchor": "top-left",
+      "scroll": {
+        "width": 200,
+        "mode": "bounce",
+        "speed": 20,
+        "pause": 1000
+      }
+    },
+    {
+      "id": "codex-detail",
+      "type": "text",
+      "x": 20,
+      "y": 222,
+      "value": "{codex.detail}",
+      "size": 12,
+      "color": "#b0aea5",
+      "anchor": "top-left",
+      "scroll": {
+        "width": 200,
+        "mode": "bounce",
+        "speed": 20,
+        "pause": 1000
+      }
+    }
+  ]
+}

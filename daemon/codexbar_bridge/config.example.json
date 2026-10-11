@@ -1,0 +1,14 @@
+{
+  "bind_ip": "192.0.2.10",
+  "device_ip": "192.0.2.20",
+  "port": 9879,
+  "cli": "/opt/homebrew/bin/codexbar",
+  "providers": {"codex": "oauth", "claude": "auto"},
+  "refresh_seconds": 120,
+  "max_age_seconds": 360,
+  "activity_roots": {
+    "codex": "~/.codex/sessions",
+    "claude": "~/.claude/projects"
+  },
+  "activity_refresh_seconds": 5
+}
