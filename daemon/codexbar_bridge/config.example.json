@@ -10,5 +10,6 @@
     "codex": "~/.codex/sessions",
     "claude": "~/.claude/projects"
   },
-  "activity_refresh_seconds": 5
+  "activity_refresh_seconds": 5,
+  "activity_page_seconds": 20
 }

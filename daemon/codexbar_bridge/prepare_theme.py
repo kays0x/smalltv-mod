@@ -23,7 +23,8 @@ def main():
     manifest['theme']['id'] = args.theme_id
     for source in manifest['data']:
         provider = source['id']
-        endpoint = f'agent-{provider}' if args.kind == 'agents' else provider
+        position = 'top' if provider == 'claude' else 'bottom'
+        endpoint = f'agent-{position}' if args.kind == 'agents' else provider
         source['url'] = f"http://{config['bind_ip']}:{config['port']}/{endpoint}.json"
     with tempfile.TemporaryDirectory() as scratch:
         source = Path(scratch)

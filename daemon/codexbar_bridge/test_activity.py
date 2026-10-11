@@ -59,6 +59,32 @@ class ActivityTests(unittest.TestCase):
             result = Activity({'claude': Path(folder) / 'missing'}).snapshot('claude')
             self.assertEqual(result['status'], 'OFFLINE')
 
+    def test_pi_tool_results_do_not_end_or_restart_work(self):
+        provider = 'pi'
+        s = Session(provider)
+        s.apply({'type': 'message', 'timestamp': T0, 'message': {'role': 'user'}})
+        started = s.started
+        s.apply({'type': 'message', 'timestamp': T1,
+                 'message': {'role': 'assistant', 'stopReason': 'toolUse'}})
+        s.apply({'type': 'message', 'timestamp': T1, 'message': {'role': 'toolResult'}})
+        self.assertEqual(s.state, 'working')
+        self.assertEqual(s.started, started)
+        for reason in ('stop', 'error', 'aborted'):
+            s.apply({'type': 'message', 'timestamp': T1,
+                     'message': {'role': 'assistant', 'stopReason': reason}})
+            self.assertEqual(s.state, 'idle')
+
+    def test_trace_files_do_not_double_count_sessions(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            session = root / 'project'
+            session.mkdir(parents=True)
+            row = {'type': 'message', 'timestamp': T0, 'message': {'role': 'user'}}
+            for name in ('session.jsonl', 'session.trace.jsonl'):
+                (session / name).write_text(json.dumps(row) + '\n')
+            result = Activity({'pi': root}).snapshot('pi', timestamp(T0) + 30)
+            self.assertEqual(result['active'], 1)
+
     def test_partial_record_is_processed_only_after_newline(self):
         with tempfile.TemporaryDirectory() as folder:
             p = Path(folder) / 'session.jsonl'

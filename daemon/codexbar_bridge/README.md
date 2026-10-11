@@ -13,6 +13,10 @@ count, elapsed turn time, project basename, and last activity category. It never
 exports prompts, replies, tool arguments, credentials, full paths, or transcript
 files. No captures or live configuration belong in this repository.
 
+With the optional remote collector enabled, the screen rotates every 20 seconds
+between Mac Claude/Codex, VPS Claude/Codex, and VPS Claude/Pi. Each page has a
+MAC or VPS timestamp label. Without a remote collector it stays on the Mac page.
+
 ## Setup
 
 1. Install the official CodexBar CLI and verify `codexbar usage --format json`
@@ -41,9 +45,34 @@ files. No captures or live configuration belong in this repository.
    the replacement works.
 
 Endpoints are `/claude.json`, `/codex.json`, `/agent-claude.json`, and
-`/agent-codex.json`. Responses contain only small display fields. `status.json`
+`/agent-codex.json`, plus `/agent-top.json` and `/agent-bottom.json` for the rotating
+dashboard. Responses contain only small display fields. `status.json`
 records sanitized values and the last request from the configured device, so
 testing a local endpoint is distinguishable from actual SmallTV polling.
+
+## Optional VPS collector
+
+Install `activity.py` and `export_activity.py` together in a private directory on
+the VPS. The exporter reads that host's session directories locally and emits
+only sanitized display fields. Verify it with Python 3.9+ on that host.
+
+Add this block to the Mac's private configuration, using an existing SSH host
+and the absolute exporter path:
+
+```json
+"remote_activity": {
+  "ssh_host": "my-vps",
+  "exporter": "/path/to/private/export_activity.py",
+  "refresh_seconds": 15,
+  "max_age_seconds": 45
+}
+```
+
+Restart the bridge. SSH uses existing authentication with `BatchMode=yes`, a
+five-second connection timeout and a twelve-second command timeout. It opens no
+VPS HTTP port, copies no credentials or transcripts, and does not install hooks
+or a remote service. Failed polls immediately show OFFLINE; successful snapshots
+also expire after 45 seconds. The Mac must remain awake to collect and serve.
 
 ## Activity semantics and limits
 
@@ -51,6 +80,9 @@ testing a local endpoint is distinguishable from actual SmallTV polling.
   `task_failed` end the matching turn. Turn end is **not proof of task success**.
 - Claude user prompts begin work; tool-result records do not restart elapsed
   time. Assistant `end_turn` and system `turn_duration` records end a turn.
+- Pi user messages begin work. Assistant `toolUse` and tool-result records retain
+  work; `stop`, `error`, and `aborted` end the turn. Trace files are excluded so
+  they do not duplicate native session records.
 - Cost metadata and file modification times never establish active work.
 - An unfinished turn with no recent event for 15 minutes becomes `UNKNOWN`,
   not `IDLE`. Missing roots are `OFFLINE`. This conservative cutoff can also
@@ -61,8 +93,8 @@ testing a local endpoint is distinguishable from actual SmallTV polling.
 - Transcript formats can change. They are not a stable public interface.
   Lifecycle hooks or app-server events are a future replacement for this
   adapter. Approval-wait state and true completion percentages are not inferred.
-- VPS agents are not connected by default. Add a separate sanitized exporter
-  on that host; do not copy raw transcripts to this bridge.
+- VPS agents are not connected by default. Enable the collector above to include
+  them. Remote adapters have the same bounded lookback and lifecycle limitations.
 - The host must remain awake. If it becomes unreachable, theme firmware retains
   its last fetched values. Check the update timestamp. Address changes require
   rebuilding the theme and restarting the listener with the new bind address.
@@ -71,7 +103,7 @@ testing a local endpoint is distinguishable from actual SmallTV polling.
 
 ```sh
 cd daemon/codexbar_bridge
-python3 -m unittest -v test_bridge.py test_activity.py
+python3 -m unittest -v test_bridge.py test_activity.py test_remote_activity.py
 ```
 
 Tests cover matching turn transitions, interrupted turns, late completion,

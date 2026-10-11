@@ -14,6 +14,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import urllib.request
 from zoneinfo import ZoneInfo
 from activity import Activity
+from remote_activity import RemoteActivity, dashboard_pages, unavailable, PROVIDERS
 
 ROOT = Path(__file__).resolve().parent
 TZ = ZoneInfo('America/Toronto')
@@ -94,6 +95,10 @@ class Bridge:
         self.activity = Activity(config.get('activity_roots', {}))
         self.agent_snapshots = {}
         self.requests.update({f'agent-{provider}': 0 for provider in self.activity.roots})
+        self.remote_activity = RemoteActivity(config['remote_activity']) if config.get('remote_activity') else None
+        self.remote_agents = {p: unavailable('Connecting to VPS') for p in PROVIDERS} if self.remote_activity else None
+        self.remote_sampled = 0
+        self.requests.update({'agent-top': 0, 'agent-bottom': 0})
         self.last_device_request = {}
         self.native_pushes = 0
         self.opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
@@ -171,6 +176,38 @@ class Bridge:
             self.save_status()
             self.stop.wait(self.config.get('activity_refresh_seconds', 5))
 
+    def poll_remote_activity(self):
+        if not self.remote_activity:
+            return
+        while not self.stop.is_set():
+            try:
+                sampled, agents = self.remote_activity.snapshot()
+                with self.lock:
+                    self.remote_agents, self.remote_sampled = agents, sampled
+            except (OSError, ValueError, TypeError, RuntimeError, subprocess.TimeoutExpired) as error:
+                with self.lock:
+                    self.remote_agents = {p: unavailable() for p in PROVIDERS}
+                    self.remote_sampled = 0
+                print(f'VPS activity unavailable: {type(error).__name__}: {error}', flush=True)
+            self.save_status()
+            self.stop.wait(self.config['remote_activity'].get('refresh_seconds', 15))
+
+    def dashboard_payload(self, position, from_device=False):
+        with self.lock:
+            now = time.time()
+            remote = self.remote_agents
+            if remote is not None and now - self.remote_sampled > self.config['remote_activity'].get('max_age_seconds', 45):
+                remote = {p: unavailable() for p in PROVIDERS}
+            value = dashboard_pages(self.agent_snapshots, remote, now,
+                                    self.config.get('activity_page_seconds', 20))[position]
+            value['stamp'] = value.pop('host') + dt.datetime.fromtimestamp(now, TZ).strftime(' %H:%M')
+            key = f'agent-{position}'
+            self.requests[key] += 1
+            if from_device:
+                self.last_device_request[key] = now
+        self.save_status()
+        return value
+
     def agent_payload(self, provider, from_device=False):
         with self.lock:
             key = f'agent-{provider}'
@@ -198,7 +235,8 @@ class Bridge:
                      'providers': {p: project(s, time.time(), self.config['max_age_seconds'])
                                    for p, s in self.snapshots.items()},
                      'http_requests': dict(self.requests), 'device_requests': dict(self.last_device_request),
-                     'native_claude_pushes': self.native_pushes, 'agents': dict(self.agent_snapshots)}
+                     'native_claude_pushes': self.native_pushes, 'agents': dict(self.agent_snapshots),
+                     'remote_agents': self.remote_agents, 'remote_sampled': self.remote_sampled}
             # Use a unique temporary name because the fetch and HTTP threads both save status.
             path = ROOT / f'.status-{threading.get_ident()}.tmp'
             path.write_text(json.dumps(state, indent=2))
@@ -220,7 +258,12 @@ def run(config):
                 self.send_error(404)
                 return
             from_device = self.client_address[0] == config['device_ip']
-            payload = bridge.agent_payload(provider[6:], from_device) if provider.startswith('agent-') else bridge.payload(provider, from_device)
+            if provider in ('agent-top', 'agent-bottom'):
+                payload = bridge.dashboard_payload(provider[6:], from_device)
+            elif provider.startswith('agent-'):
+                payload = bridge.agent_payload(provider[6:], from_device)
+            else:
+                payload = bridge.payload(provider, from_device)
             body = json.dumps(payload, separators=(',', ':')).encode()
             self.send_response(200)
             self.send_header('Content-Type', 'application/json')
@@ -234,7 +277,7 @@ def run(config):
 
     server = ThreadingHTTPServer((config['bind_ip'], config['port']), Handler)
     server.timeout = 1
-    for operation in (bridge.poll, bridge.push_native, bridge.poll_activity):
+    for operation in (bridge.poll, bridge.push_native, bridge.poll_activity, bridge.poll_remote_activity):
         threading.Thread(target=operation, daemon=True).start()
 
     def stop(*_):

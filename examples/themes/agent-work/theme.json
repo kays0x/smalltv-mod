@@ -4,7 +4,7 @@
     "id": "agent-work",
     "name": "Agent Work",
     "author": "SmallTV fork",
-    "version": "1.0.0"
+    "version": "1.1.0"
   },
   "display": {
     "width": 240,
@@ -14,7 +14,7 @@
   "data": [
     {
       "id": "claude",
-      "url": "http://192.0.2.10:9879/agent-claude.json",
+      "url": "http://192.0.2.10:9879/agent-top.json",
       "interval": 10,
       "fields": [
         {
@@ -38,8 +38,8 @@
           "path": "detail"
         },
         {
-          "id": "active",
-          "path": "active"
+          "id": "title",
+          "path": "title"
         },
         {
           "id": "tone",
@@ -53,7 +53,7 @@
     },
     {
       "id": "codex",
-      "url": "http://192.0.2.10:9879/agent-codex.json",
+      "url": "http://192.0.2.10:9879/agent-bottom.json",
       "interval": 10,
       "fields": [
         {
@@ -77,8 +77,8 @@
           "path": "detail"
         },
         {
-          "id": "active",
-          "path": "active"
+          "id": "title",
+          "path": "title"
         },
         {
           "id": "tone",
@@ -128,7 +128,7 @@
       "type": "text",
       "x": 20,
       "y": 46,
-      "value": "CLAUDE",
+      "value": "{claude.title}",
       "size": 16,
       "color": "#d97757",
       "anchor": "top-left"
@@ -230,7 +230,7 @@
       "type": "text",
       "x": 20,
       "y": 148,
-      "value": "CODEX",
+      "value": "{codex.title}",
       "size": 16,
       "color": "#7dc5ff",
       "anchor": "top-left"

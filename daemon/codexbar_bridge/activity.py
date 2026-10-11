@@ -104,6 +104,28 @@ class Session:
             elif kind == 'system' and row.get('subtype') == 'turn_duration':
                 self.state, self.activity = 'idle', 'Turn ended'
                 self.updated = max(self.updated, when)
+        elif provider == 'pi' and kind == 'message':
+            message = row.get('message')
+            if not isinstance(message, dict):
+                return
+            role = message.get('role')
+            if role == 'user':
+                self.state, self.started, self.activity = 'working', when, 'Turn started'
+            elif role == 'assistant':
+                reason = message.get('stopReason')
+                if reason in ('stop', 'error', 'aborted'):
+                    self.state = 'idle'
+                    self.activity = {'stop': 'Turn ended', 'error': 'Turn failed',
+                                     'aborted': 'Interrupted'}[reason]
+                elif reason == 'toolUse':
+                    self.state, self.activity = 'working', 'Last: tool'
+                else:
+                    self.state, self.activity = 'unknown', 'No completion signal'
+            elif role == 'toolResult' and self.state == 'working':
+                self.activity = 'Last: tool result'
+            else:
+                return
+            self.updated = max(self.updated, when)
 
 
 class Transcript:
@@ -158,7 +180,8 @@ class Activity:
             for path in root.glob(pattern):
                 try:
                     modified = path.stat().st_mtime
-                    if modified >= now - LOOKBACK and not path.parent.name.startswith('codexbar-'):
+                    if (modified >= now - LOOKBACK and not path.parent.name.startswith('codexbar-')
+                            and not path.name.endswith('.trace.jsonl')):
                         candidates.append((modified, path))
                 except OSError:
                     continue
