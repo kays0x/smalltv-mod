@@ -13,8 +13,8 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import urllib.request
 from zoneinfo import ZoneInfo
-from activity import Activity
-from remote_activity import RemoteActivity, dashboard_pages, unavailable, PROVIDERS
+from activity import Activity, display_text
+from remote_activity import RemoteActivity, dashboard_pages, unavailable, PROVIDERS, STATUSES
 
 ROOT = Path(__file__).resolve().parent
 TZ = ZoneInfo('America/Toronto')
@@ -85,6 +85,70 @@ def native_payload(snapshot, now, max_age):
             'st': 'normal', 'ok': True}
 
 
+def agent_row(title, snapshot):
+    # Rebuild each row instead of forwarding arbitrary local or remote fields.
+    if (not isinstance(snapshot, dict) or not isinstance(snapshot.get('status'), str)
+            or snapshot['status'] not in STATUSES):
+        snapshot = unavailable('Reading activity')
+    active, waiting = snapshot.get('active', 0), snapshot.get('waiting', 0)
+    if (not isinstance(active, int) or isinstance(active, bool) or not 0 <= active <= 32
+            or not isinstance(waiting, int) or isinstance(waiting, bool) or not 0 <= waiting <= 32
+            or active + waiting > 32
+            or (snapshot['status'] == 'WAITING') != (waiting > 0)
+            or (snapshot['status'] != 'WAITING' and
+                (snapshot['status'] == 'WORKING') != (active > 0))):
+        snapshot = unavailable('Activity state unavailable')
+        active, waiting = 0, 0
+    value = {key: display_text(snapshot.get(key, '')) if isinstance(snapshot.get(key, ''), str) else ''
+             for key in ('elapsed', 'project', 'detail')}
+    status = snapshot['status']
+    value.update(title=title, status=status, active=active, waiting=waiting,
+                 count=f'{waiting} waiting' if waiting else f'{active} active',
+                 tone=2 if waiting or status in ('UNKNOWN', 'OFFLINE') else (1 if active else 0))
+    return value
+
+
+def quota_display(snapshot, now, max_age):
+    # Only finite quota numbers enter project(); identity and reset text stay private.
+    clean = {}
+    if isinstance(snapshot, dict):
+        fetched = snapshot.get('fetched')
+        if (isinstance(fetched, (int, float)) and not isinstance(fetched, bool)
+                and math.isfinite(fetched) and 0 < fetched <= now + 10):
+            clean['fetched'] = fetched
+        for name in ('session', 'weekly'):
+            window = snapshot.get(name)
+            used = window.get('used') if isinstance(window, dict) else None
+            if (isinstance(used, (int, float)) and not isinstance(used, bool)
+                    and math.isfinite(used)):
+                clean[name] = {'used': max(0, min(100, used)), 'reset': None}
+    return project(clean, now, max_age)
+
+
+def agents_document(local, remote, quotas, now, max_age):
+    local = local if isinstance(local, dict) else {}
+    remote = remote if isinstance(remote, dict) else ({} if remote is not None else None)
+    quotas = quotas if isinstance(quotas, dict) else {}
+    pages = [{'id': 'mac', 'title': 'MAC', 'kind': 'agents',
+              'rows': [agent_row('CLAUDE', local.get('claude')),
+                       agent_row('CODEX', local.get('codex'))]}]
+    if remote is not None:
+        pages.extend([
+            {'id': 'vps-codex', 'title': 'VPS', 'kind': 'agents',
+             'rows': [agent_row('CLAUDE', remote.get('claude')),
+                      agent_row('CODEX', remote.get('codex'))]},
+            {'id': 'vps-pi', 'title': 'VPS', 'kind': 'agents',
+             'rows': [agent_row('CLAUDE', remote.get('claude')),
+                      agent_row('PI', remote.get('pi'))]}])
+    claude = quota_display(quotas.get('claude'), now, max_age)
+    codex = quota_display(quotas.get('codex'), now, max_age)
+    pages.append({'id': 'usage', 'title': 'USAGE', 'kind': 'usage', 'rows': [
+        {'title': 'CLAUDE', 'label': '5h', 'text': claude['sessionText'], 'bar': claude['sessionBar']},
+        {'title': 'CLAUDE', 'label': '7d', 'text': claude['weeklyText'], 'bar': claude['weeklyBar']},
+        {'title': 'CODEX', 'label': '7d', 'text': codex['weeklyText'], 'bar': codex['weeklyBar']}]})
+    return {'sampled': int(now), 'pages': pages}
+
+
 class Bridge:
     def __init__(self, config):
         self.config = config
@@ -98,7 +162,7 @@ class Bridge:
         self.remote_activity = RemoteActivity(config['remote_activity']) if config.get('remote_activity') else None
         self.remote_agents = {p: unavailable('Connecting to VPS') for p in PROVIDERS} if self.remote_activity else None
         self.remote_sampled = 0
-        self.requests.update({'agent-top': 0, 'agent-bottom': 0})
+        self.requests.update({'agent-top': 0, 'agent-bottom': 0, 'agents': 0})
         self.last_device_request = {}
         self.native_pushes = 0
         self.opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
@@ -208,6 +272,21 @@ class Bridge:
         self.save_status()
         return value
 
+    def agents_payload(self, from_device=False):
+        with self.lock:
+            now = time.time()
+            remote = self.remote_agents
+            if (remote is not None and
+                    now - self.remote_sampled > self.config['remote_activity'].get('max_age_seconds', 45)):
+                remote = {p: unavailable() for p in PROVIDERS}
+            value = agents_document(self.agent_snapshots, remote, self.snapshots, now,
+                                    self.config['max_age_seconds'])
+            self.requests['agents'] += 1
+            if from_device:
+                self.last_device_request['agents'] = now
+        self.save_status()
+        return value
+
     def agent_payload(self, provider, from_device=False):
         with self.lock:
             key = f'agent-{provider}'
@@ -258,7 +337,9 @@ def run(config):
                 self.send_error(404)
                 return
             from_device = self.client_address[0] == config['device_ip']
-            if provider in ('agent-top', 'agent-bottom'):
+            if provider == 'agents':
+                payload = bridge.agents_payload(from_device)
+            elif provider in ('agent-top', 'agent-bottom'):
                 payload = bridge.dashboard_payload(provider[6:], from_device)
             elif provider.startswith('agent-'):
                 payload = bridge.agent_payload(provider[6:], from_device)

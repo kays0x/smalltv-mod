@@ -58,6 +58,7 @@ small.hint{display:block;color:var(--mut);margin-top:4px;font-size:12px}
  <button data-t="display">Display</button>
  <button data-t="ticker">Ticker</button>
  <button data-t="usage">Clawdmeter</button>
+ <button data-t="agents">Agents</button>
  <button data-t="radar">Radar</button>
  <button data-t="ha">Home Assistant</button>
  <button data-t="update">System</button>
@@ -117,6 +118,7 @@ small.hint{display:block;color:var(--mut);margin-top:4px;font-size:12px}
    <select id="mode" onchange="modeChanged()">
     <option value="stocks">Ticker</option>
     <option value="usage">Clawdmeter</option>
+    <option value="agents">Agents</option>
     <option value="radar">Radar</option>
     <option value="ha">Home Assistant</option>
     <option value="theme">Theme clock</option>
@@ -126,6 +128,7 @@ small.hint{display:block;color:var(--mut);margin-top:4px;font-size:12px}
     <label>Switch mode every (s)</label><input id="carouselSec" type="number" min="5" max="3600">
     <div class="chk"><input id="carouselTicker" type="checkbox"><label>Ticker</label></div>
     <div class="chk"><input id="carouselUsage" type="checkbox"><label>Clawdmeter</label></div>
+    <div class="chk"><input id="carouselAgents" type="checkbox"><label>Agents</label></div>
     <div class="chk"><input id="carouselRadar" type="checkbox"><label>Radar</label></div>
     <div class="chk"><input id="carouselHa" type="checkbox"><label>Home Assistant</label></div>
    </div>
@@ -301,6 +304,42 @@ small.hint{display:block;color:var(--mut);margin-top:4px;font-size:12px}
   </div>
  </section>
 
+ <!-- AGENTS (feature) -->
+ <section id="agents" class="tab">
+  <div class="card"><h2>Agent activity</h2>
+   <label for="agentsUrl">Companion feed URL</label>
+   <input id="agentsUrl" type="url" placeholder="http://bridge.local:9879/agents.json">
+   <small class="hint">Use the LAN address of the companion bridge. It supplies Mac and VPS activity and usage pages; credentials and transcripts stay on the host. Choose Agents in Display → Mode, then Save settings.</small>
+   <div class="row">
+    <div><label for="agentsRefreshSec">Refresh data (s)</label><input id="agentsRefreshSec" type="number" min="2" max="300"></div>
+    <div><label for="agentsPageSec">Show each page (s)</label><input id="agentsPageSec" type="number" min="5" max="3600"></div>
+   </div>
+   <div class="chk"><input id="agentsAutoRotate" type="checkbox"><label for="agentsAutoRotate">Automatically rotate pages</label></div>
+   <label for="agentsClockThemeId">Clock for double tap</label>
+   <select id="agentsClockThemeId"><option value="">No clock selected</option></select>
+   <small class="hint">Install a clock in Display → Theme clocks. Selecting it here keeps Agents active and lets double tap switch to the clock and back.</small>
+  </div>
+  <div class="card"><h2>Live screen</h2>
+   <div id="agentsStatus" class="muted" aria-live="polite">Loading...</div>
+   <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:12px">
+    <button class="btn sec" onclick="agentsControl('next')">Next page</button>
+    <button class="btn sec" id="agentsRotationBtn" onclick="agentsControl('toggleRotation')">Pause rotation</button>
+    <button class="btn sec" onclick="agentsControl('toggleClock')">Switch clock / agents</button>
+   </div>
+   <small class="hint">These controls act immediately on the device, using the same cached pages as hardware taps.</small>
+  </div>
+  <div class="card"><h2>Hardware tap</h2>
+   <div class="chk"><input id="agentsTouchEnabled" type="checkbox"><label for="agentsTouchEnabled">Enable the Pro's touch sensor</label></div>
+   <small class="hint">Off until enabled and saved. Single tap: next page. Double tap: clock / agents. Hold: pause / resume rotation. A tap while the screen is dimmed wakes it first.</small>
+   <label for="agentsTouchSensitivity">Touch sensitivity (% of baseline)</label>
+   <input id="agentsTouchSensitivity" type="number" min="75" max="95" step="1">
+   <small class="hint">Default 88; range 75–95. Raise it for lighter touches, lower it if taps register without contact. Save settings to apply and recalibrate; keep your hand off the top while saving.</small>
+   <div id="agentsTouchStatus" class="muted" style="margin-top:12px" aria-live="polite">Checking sensor...</div>
+   <button class="btn sec" id="agentsCalibrateBtn" style="margin-top:12px" onclick="calibrateTouch()" disabled>Calibrate untouched sensor</button>
+   <small class="hint">Keep your hand off the device while calibrating. The live raw and baseline values let you verify the sensor before enabling gestures. Boards without this sensor still support Agents and the web controls.</small>
+  </div>
+ </section>
+
  <!-- HOME ASSISTANT (feature) -->
  <section id="ha" class="tab">
   <div class="card"><h2>MQTT</h2>
@@ -379,6 +418,7 @@ document.querySelectorAll('nav button').forEach(function(b){b.onclick=function()
  document.querySelectorAll('nav button').forEach(function(x){x.classList.remove('active')});
  document.querySelectorAll('.tab').forEach(function(x){x.classList.remove('active')});
  b.classList.add('active');$(b.dataset.t).classList.add('active');
+ if(b.dataset.t==='agents')loadAgentsStatus();
 }});
 
 // field groups by their location in the nested config
@@ -417,8 +457,8 @@ var TZMAP={
 function fillTz(){var s=$('tz');if(!s)return;var keys=Object.keys(TZMAP).filter(function(k){return k!==''});
  keys.sort();s.innerHTML='<option value="">UTC</option>'+keys.map(function(k){return '<option value="'+k+'">'+k+'</option>'}).join('');}
 
-var MODEOPT={ticker:'stocks',usage:'usage',radar:'radar',ha:'ha',theme:'theme'};
-var CAROPT={ticker:'carouselTicker',usage:'carouselUsage',radar:'carouselRadar',ha:'carouselHa'};
+var MODEOPT={ticker:'stocks',usage:'usage',agents:'agents',radar:'radar',ha:'ha',theme:'theme'};
+var CAROPT={ticker:'carouselTicker',usage:'carouselUsage',agents:'carouselAgents',radar:'carouselRadar',ha:'carouselHa'};
 function hideFeat(name){
  var b=document.querySelector('nav button[data-t="'+name+'"]'); if(b)b.remove();
  var sec=$(name); if(sec)sec.remove();
@@ -442,6 +482,7 @@ function resetColors(){setGain('rGain','rgVal',100);setGain('gGain','ggVal',100)
  toast('Gains reset — press Save settings to apply')}
 function loadConfig(){return j('/api/config').then(function(c){C=c;
  var f=c.features||{}; ['ticker','usage','radar','ha'].forEach(function(k){if(f[k]===false)hideFeat(k)});
+ if(f.agents!==true)hideFeat('agents');else{loadAgentsConfig(c.agents||{});loadAgentsStatus()}
  // WireGuard is only built for the chips with room for it; drop the card otherwise
  if(f.theme!==true){hideFeat('theme');var tc=$('themeCard');if(tc)tc.remove()}else{loadThemes()}
  if(f.wireguard===false){var wc=$('wgCard'); if(wc)wc.remove()}
@@ -475,7 +516,7 @@ function loadConfig(){return j('/api/config').then(function(c){C=c;
  $('mode').value=c.mode||'stocks'; modeChanged();
  sv('carouselSec',c.carouselSec||30);
  sc('carouselTicker',c.carouselTicker!==false); sc('carouselUsage',c.carouselUsage!==false); sc('carouselRadar',c.carouselRadar!==false);
- sc('carouselHa',c.carouselHa!==false);
+ sc('carouselHa',c.carouselHa!==false); sc('carouselAgents',!!c.carouselAgents);
  // HA / MQTT slice
  var h=c.ha||{};
  sv('haBrokerHost',h.brokerHost); sv('haBrokerPort',h.brokerPort||1883);
@@ -564,7 +605,7 @@ function collect(){
  var o={mode:gv('mode'),
   carouselSec:parseInt(gv('carouselSec'))||30,
   carouselTicker:gc('carouselTicker'), carouselUsage:gc('carouselUsage'), carouselRadar:gc('carouselRadar'),
-  carouselHa:gc('carouselHa'),
+  carouselHa:gc('carouselHa'), carouselAgents:gc('carouselAgents'),
   brightness:parseInt(gv('brightness'))||0,
   rotation:parseInt(gv('rotation')),
   autoBrightness:gc('autoBrightness'),
@@ -606,6 +647,8 @@ function collect(){
   });
   o.ticker=t;
  }
+ // agents slice
+ if($('agents'))o.agents=collectAgentsConfig();
  // usage slice
  if($('usage')) o.usage={usageUrl:gv('usageUrl'), pollSec:parseInt(gv('usagePollSec'))||0};
  // HA / MQTT slice (blank password keeps the stored one, so only send what was typed)
@@ -696,14 +739,14 @@ function scan(){$('scanList').innerHTML='<div class="muted">Scanning...</div>';
 function loadStatus(){j('/api/status').then(function(s){
  $('dot').className='dot'+(s.connected?' ok':'');
  $('hi').textContent=s.mode==='ap'?'setup mode':(s.ip||'');
- var cn=$('clockNow'); if(cn){var ne=!!(C.clock&&C.clock.nightEnabled)||C.mode==='theme'||!!(C.wg&&C.wg.enabled);var ns=s.night?'  · night mode active':(s.nightHeld?'  · night mode waiting for NTP':'');cn.textContent=!ne?'Clock: enable night mode, a theme clock, or WireGuard to start NTP':('Clock: '+(s.synced?(s.time||'synced')+(s.tz?' ('+s.tz+')':''):'waiting for NTP...')+ns);}
+ var cn=$('clockNow'); if(cn){var ne=!!(C.clock&&C.clock.nightEnabled)||C.mode==='theme'||C.mode==='agents'||!!(C.wg&&C.wg.enabled);var ns=s.night?'  · night mode active':(s.nightHeld?'  · night mode waiting for NTP':'');cn.textContent=!ne?'Clock: enable night mode, Agents, a theme clock, or WireGuard to start NTP':('Clock: '+(s.synced?(s.time||'synced')+(s.tz?' ('+s.tz+')':''):'waiting for NTP...')+ns);}
  var fw=$('fwVer'); if(fw)fw.textContent=s.fw+' '+s.version;
  // Surface the result of a boot-time GitHub update (ESP8266) once on first load,
  // so a failure that happened across the reboot is visible even if the original
  // System tab was closed. Don't clobber an in-progress check/update message.
  if(!window._otaShown){window._otaShown=1;var gm=$('ghMsg');if(gm&&!gm.textContent&&s.updateMsg&&s.updateMsg!=='updating...')gm.textContent='Last update: '+s.updateMsg}
  var fv=$('footVer'); if(fv)fv.textContent=' v'+s.version;
- if(s.repo){var rl=$('repoLink'); if(rl)rl.href=s.repo+'/releases'; var fr=$('footRepo'); if(fr)fr.href=s.repo;}
+ if(s.repo){var rl=$('repoLink'); if(rl)rl.href=s.repo+'/releases'; var fr=$('footRepo'); if(fr){fr.href=s.repo;fr.textContent='GitHub: '+s.repo.replace('https://github.com/','');}}
  $('statusBox').innerHTML=
   kv('Firmware',s.fw+' '+s.version+(s.variant?' ('+s.variant+')':''))+kv('Mode',s.mode.toUpperCase())+
   kv('Network',s.ssid||'-')+kv('IP',s.ip||'-')+kv('mDNS','http://'+(C.hostname||'smalltv')+'.local')+
@@ -804,6 +847,53 @@ function importCfg(){var f=$('cfgFile').files[0];if(!f){toast('Pick a config .js
 function reboot(){if(confirm('Reboot device?'))j('/api/reboot',{method:'POST'}).then(function(){toast('Rebooting...')})}
 function factory(){if(confirm('Erase ALL settings and reboot?'))j('/api/factory',{method:'POST'}).then(function(){toast('Reset, rebooting...')})}
 
+// Agents settings and diagnostics stay separate from theme selection.
+var agentsClockSelection=null,agentsStatusBusy=false;
+function loadAgentsConfig(a){
+ sv('agentsUrl',a.url||'');sv('agentsRefreshSec',a.refreshSec!=null?a.refreshSec:5);
+ sv('agentsPageSec',a.pageSec!=null?a.pageSec:20);sc('agentsAutoRotate',a.autoRotate!==false);
+ agentsClockSelection=a.clockThemeId||'';sv('agentsClockThemeId',agentsClockSelection);sc('agentsTouchEnabled',!!a.touchEnabled);
+ sv('agentsTouchSensitivity',a.touchSensitivity!=null?a.touchSensitivity:88);
+}
+function collectAgentsConfig(){return {url:gv('agentsUrl').trim(),
+ refreshSec:parseInt(gv('agentsRefreshSec'))||5,pageSec:parseInt(gv('agentsPageSec'))||20,
+ autoRotate:gc('agentsAutoRotate'),clockThemeId:gv('agentsClockThemeId'),touchEnabled:gc('agentsTouchEnabled'),
+ touchSensitivity:Math.min(95,Math.max(75,parseInt(gv('agentsTouchSensitivity'))||88))}}
+function renderAgentsStatus(s){var box=$('agentsStatus');if(!box)return;
+ box.innerHTML=kv('View',s.clockActive?'Clock':'Agents')+kv('Feed',s.fresh?'Live':(s.valid?'Stale':'Waiting for data'))+
+  kv('Page',s.pages?((s.page+1)+' / '+s.pages+(s.title?' · '+esc(s.title):'')):'—')+
+  kv('Last update',s.ageSec!=null?s.ageSec+'s ago':'—')+
+  kv('Rotation',s.autoRotate?'Running':'Paused')+
+  (s.fetching?kv('Request','Fetching...'):'')+(s.error?kv('Error',esc(s.error)):'');
+ var button=$('agentsRotationBtn');if(button)button.textContent=s.autoRotate?'Pause rotation':'Resume rotation';
+}
+function renderTouchStatus(t){var box=$('agentsTouchStatus');if(!box)return;
+ var enable=$('agentsTouchEnabled'),calibrate=$('agentsCalibrateBtn'),sensitivity=$('agentsTouchSensitivity');
+ if(enable)enable.disabled=!t.supported;if(calibrate)calibrate.disabled=!t.supported;if(sensitivity)sensitivity.disabled=!t.supported;
+ if(!t.supported){box.textContent='This board has no supported touch sensor. Use the web controls above.';return}
+ box.innerHTML=kv('Gestures',t.enabled?'Enabled':'Disabled')+kv('Sensor',t.calibrated?'Calibrated':'Not calibrated')+
+  kv('Raw / baseline',t.raw+' / '+t.baseline)+
+  (t.min!=null&&t.max!=null?kv('Minimum / maximum',t.min+' / '+t.max):'')+
+  (t.pressThreshold!=null?kv('Press threshold',t.pressThreshold+(t.thresholdPercent!=null?' ('+t.thresholdPercent+'%)':'')):'')+
+  (t.releaseThreshold!=null?kv('Release threshold',t.releaseThreshold+(t.releasePercent!=null?' ('+t.releasePercent+'%)':'')):'')+
+  kv('Touch',t.pressed?'Pressed':'Released')+
+  kv('Single / double / hold',(t.single||0)+' / '+(t.double||0)+' / '+(t.hold||0))+
+  kv('Last gesture',esc(t.lastGesture||'—'));
+}
+function loadAgentsStatus(){if(!$('agents')||agentsStatusBusy)return Promise.resolve();
+ agentsStatusBusy=true;return Promise.all([
+  j('/api/agents/status').then(renderAgentsStatus).catch(function(e){$('agentsStatus').textContent=e.message}),
+  j('/api/touch').then(renderTouchStatus).catch(function(e){$('agentsTouchStatus').textContent=e.message})
+ ]).finally(function(){agentsStatusBusy=false});
+}
+function agentsControl(action){return j('/api/agents/control',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:action})})
+ .then(function(s){renderAgentsStatus(s);if(action==='toggleRotation'){sc('agentsAutoRotate',s.autoRotate);if(C.agents)C.agents.autoRotate=s.autoRotate}return loadAgentsStatus()})
+ .catch(function(e){toast(e.message)})}
+function calibrateTouch(){var b=$('agentsCalibrateBtn');if(b)b.disabled=true;
+ return j('/api/touch/calibrate',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'})
+ .then(function(t){renderTouchStatus(t);toast('Calibration started; keep your hand off the top');return loadAgentsStatus()})
+ .catch(function(e){toast(e.message);return loadAgentsStatus()})}
+
 // OTA
 function themeRequest(path,body){return fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}).then(function(r){return r.json().then(function(d){if(!r.ok)throw new Error(d.error||'Theme request failed');return d})})}
 var themeEntries=[];
@@ -812,12 +902,19 @@ function themeChoiceChanged(){var select=$('themeSelect');if(!select)return;
  $('themeUseBtn').disabled=!theme||theme.valid===false;
  $('themeDetails').textContent=!theme?'No theme selected':(theme.valid===false?'Invalid package: '+(theme.error||'Could not read theme')+' — remove it and install a corrected package.':theme.name+(theme.version?' · '+theme.version:'')+' · '+Math.ceil(theme.bytes/1024)+' KiB');
 }
+function agentsClockChoices(){var select=$('agentsClockThemeId');if(!select)return;
+ var selected=agentsClockSelection!==null?agentsClockSelection:select.value;agentsClockSelection=null;select.textContent='';
+ var empty=document.createElement('option');empty.value='';empty.textContent='No clock selected';select.appendChild(empty);
+ themeEntries.filter(function(t){return t.valid!==false&&t.id.length<=31}).forEach(function(t){var o=document.createElement('option');o.value=t.id;o.textContent=t.name;select.appendChild(o)});
+ if(selected&&!themeEntries.some(function(t){return t.id===selected&&t.valid!==false&&t.id.length<=31})){var missing=document.createElement('option');missing.value=selected;missing.textContent=selected+' — unavailable';select.appendChild(missing)}
+ select.value=selected;
+}
 function loadThemes(){return j('/api/themes').then(function(d){
  var select=$('themeSelect');if(!select)return;select.textContent='';themeEntries=d.themes||[];
  themeEntries.forEach(function(t){var o=document.createElement('option');o.value=t.id;o.textContent=t.valid===false?t.id+' — invalid package':t.name+' — '+t.version;select.appendChild(o)});
  if(d.selected)select.value=d.selected;
  $('themeStatus').textContent=themeEntries.length+' installed · '+Math.floor(d.freeBytes/1024)+' KiB free'+(d.error?' · '+d.error:'');
- themeChoiceChanged();
+ themeChoiceChanged();agentsClockChoices();
  }).catch(function(e){toast(e.message)})}
 function selectTheme(){var id=$('themeSelect').value;var theme=themeEntries.find(function(t){return t.id===id});
  if(!theme||theme.valid===false){toast('Choose a valid installed theme first');return}
@@ -840,5 +937,6 @@ function upload(){var f=$('fw').files[0];if(!f){toast('Pick a .bin first');retur
 
 loadConfig().then(loadStatus);
 setInterval(loadStatus,5000);
+setInterval(function(){var tab=$('agents');if(tab&&tab.classList.contains('active'))loadAgentsStatus()},1000);
 </script>
 </body></html>

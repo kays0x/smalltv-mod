@@ -1,6 +1,7 @@
 # CodexBar and agent activity bridge
 
-A standalone, read-only bridge for SmallTV theme clocks. It does not modify
+A standalone, read-only bridge for SmallTV theme clocks and the native Agents
+mode in this fork. It does not modify
 CodexBar, Codex, Claude Code, their logins, or their hook configuration.
 
 The usage theme puts Claude first with five-hour and weekly allowances, then
@@ -13,7 +14,7 @@ count, elapsed turn time, project basename, and last activity category. It never
 exports prompts, replies, tool arguments, credentials, full paths, or transcript
 files. No captures or live configuration belong in this repository.
 
-With the optional remote collector enabled, the screen rotates every 20 seconds
+With the optional remote collector enabled, the legacy theme rotates every 20 seconds
 between Mac Claude/Codex, VPS Claude/Codex, and VPS Claude/Pi. Each page has a
 MAC or VPS timestamp label. Without a remote collector it stays on the Mac page.
 
@@ -49,6 +50,73 @@ Endpoints are `/claude.json`, `/codex.json`, `/agent-claude.json`, and
 dashboard. Responses contain only small display fields. `status.json`
 records sanitized values and the last request from the configured device, so
 testing a local endpoint is distinguishable from actual SmallTV polling.
+
+## Native Agents mode feed
+
+The native firmware mode consumes `http://<bridge-lan-address>:9879/agents.json`.
+Unlike the theme's rotating top/bottom feeds, every request returns all pages in
+the same order. The device owns page selection, automatic rotation and touch
+gestures; polling the bridge never advances the selected page. The older quota
+and theme endpoints continue to work.
+
+The response is a compact JSON object with `sampled` (the current host Unix
+timestamp in seconds) and `pages`. There are at most four pages:
+
+| ID | Title | Kind | Rows |
+| --- | --- | --- | --- |
+| `mac` | `MAC` | `agents` | Claude, Codex |
+| `vps-codex` | `VPS` | `agents` | Claude, Codex |
+| `vps-pi` | `VPS` | `agents` | Claude, Pi |
+| `usage` | `USAGE` | `usage` | Claude 5h, Claude 7d, Codex 7d |
+
+The two VPS pages are omitted when the remote collector is not configured. The
+Mac and usage pages are always present, including while sources are unavailable.
+Each page has only `id`, `title`, `kind`, and `rows`; rows are bounded to two for
+agents and three for usage. An example agent row is:
+
+```json
+{
+  "title": "CLAUDE",
+  "status": "WAITING",
+  "count": "1 waiting",
+  "elapsed": "",
+  "project": "example-project",
+  "detail": "Answer needed",
+  "active": 0,
+  "waiting": 1,
+  "tone": 2
+}
+```
+
+Agent states are `WORKING`, `WAITING`, `IDLE`, `UNKNOWN`, and `OFFLINE`. Counts
+are bounded to 32 sessions. `tone` is 0 for idle, 1 for work, and 2 for waiting,
+unknown or offline. Waiting and active counts can coexist; waiting takes display
+priority. Display strings contain at most 48 printable ASCII characters.
+Provider titles and count text are rebuilt by the bridge, not accepted from
+transcript fields. Every public row is explicitly whitelisted.
+
+Usage rows have only `title`, `label`, `text`, and `bar`, for example:
+
+```json
+{"title":"CLAUDE","label":"5h","text":"25%","bar":25}
+```
+
+Bars represent used percentages from 0 through 100. Unavailable or stale
+windows use `text: "n/a"` and `bar: 0`; actual zero usage uses `text: "0%"`.
+The Codex five-hour window is omitted. There are no reset-countdown fields,
+account identities, prompts, credentials or raw transcript content.
+
+`sampled` measures host response freshness, not the age of a remote observation.
+Expired remote observations become OFFLINE on every request after the configured
+remote maximum age, even if the last SSH poll succeeded. Failed SSH polls also
+become OFFLINE immediately. The firmware must independently indicate stale data
+when it can no longer fetch the bridge; receiving a complete document updates
+its cached pages. Responses have `Cache-Control: no-store`. The existing LAN
+source-address restriction applies to this endpoint too.
+
+`status.json` tracks total native feed requests under `http_requests.agents` and
+the last confirmed device poll under `device_requests.agents`. These counters
+are independent of the legacy theme's `agent-top` and `agent-bottom` requests.
 
 ## Optional VPS collector
 
@@ -113,5 +181,8 @@ python3 -m unittest -v test_bridge.py test_activity.py test_remote_activity.py
 Tests cover matching turn transitions, interrupted turns, late completion,
 partial JSONL writes, metadata-only updates, unavailable/stale quota windows,
 percentage direction, and omission of transcript text from display payloads.
-Theme packing and previews use the shared firmware renderer. This addition
-changes host tools and theme data, not the device's firmware or partition layout.
+Tests also cover complete native page order, question waits, quota freshness,
+remote expiry, device poll accounting, and strict public field whitelisting.
+Theme packing and previews use the shared firmware renderer. The bridge and
+legacy themes still work with upstream 2.16.0; the native Agents mode requires
+this fork's firmware build.

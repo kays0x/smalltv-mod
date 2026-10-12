@@ -13,10 +13,11 @@
 // ---------------------------------------------------------------------------
 #define FW_NAME     "smalltv-mod"
 #define FW_VERSION  "2.16.0"
+#define FORK_BUILD  "agents-tap-3"
 
 // Project / update references (shown in the web UI; used by the GitHub self-update)
-#define REPO_URL      "https://github.com/giovi321/smalltv-mod"
-#define REPO_OWNER    "giovi321"
+#define REPO_URL      "https://github.com/kays0x/smalltv-mod"
+#define REPO_OWNER    "kays0x"
 #define REPO_NAME     "smalltv-mod"
 // Release asset the GitHub self-updater pulls, and the short variant name shown
 // in the web UI. One app image per target, plus a second one for the two boards
@@ -139,6 +140,7 @@
 #define MODE_RADAR     2
 #define MODE_CAROUSEL  3
 #define MODE_NOTIFY    4             // transient overlay: armed over HTTP, never persisted
+#define MODE_AGENTS    7             // native agent activity and usage pages
 #define MODE_THEME     6             // declarative installed clock faces
 #define MODE_HA        5             // Home Assistant screens pushed over MQTT
 #define DEFAULT_MODE MODE_STOCKS
@@ -290,10 +292,11 @@
 // yourself from a fork: .github/scripts/fetch-quotes.mjs + quotes-config.json
 // are the example fetcher and symbol list, and the docs
 // (reference/data-sources) show an example scheduled workflow that pushes them
-// to a `data` branch — point REPO_OWNER/REPO_NAME at that fork. raw sends a
+// to a `data` branch — point GH_QUOTES_BASE at that fork. raw sends a
 // ~4 KB certificate record and does not negotiate MFLN, so this path uses a
 // larger TLS buffer.
-#define GH_QUOTES_BASE "https://raw.githubusercontent.com/" REPO_OWNER "/" REPO_NAME "/data/quotes/"
+// Keep the existing quote source independent of this fork's OTA repository.
+#define GH_QUOTES_BASE "https://raw.githubusercontent.com/giovi321/smalltv-mod/data/quotes/"
 #define GH_QUOTES_RXBUF 5120
 #define CASH_GQL_HOST   "www.cash.ch"
 #define CASH_GQL_PATH   "/_/api/graphql/prod"
@@ -398,4 +401,12 @@
 // platformio.ini) to keep the heap headroom it exists to protect.
 #ifndef WITH_THEME
 #define WITH_THEME 1
+#endif
+
+#ifndef WITH_AGENTS
+  #ifdef SMALLTV_LEAN
+    #define WITH_AGENTS 0
+  #else
+    #define WITH_AGENTS 1
+  #endif
 #endif

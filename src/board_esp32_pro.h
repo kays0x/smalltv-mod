@@ -8,7 +8,7 @@
 // (GPIO 13/14/15/19/21) are a DIFFERENT board and do not apply here.
 //
 // The board also has a capacitive touch button on GPIO 32 (ESP32 T9); the
-// firmware has no button handling yet, so it is unused.
+// touch monitor reads it and dispatches calibrated gestures.
 #pragma once
 
 #define TFT_SCLK   18
@@ -27,3 +27,5 @@
 // No ambient-light sensor on this board -> auto-brightness compiled out.
 #define HAS_LDR     0
 #define ADC_MAX  4095   // classic ESP32 ADC is 12-bit (unused while HAS_LDR == 0)
+
+#define TOUCH_PIN 32

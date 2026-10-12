@@ -72,6 +72,17 @@ struct UsageSettings {
   void fromJson(JsonObjectConst o);
 };
 
+// ---- Native agents dashboard ----------------------------------------------
+struct AgentsSettings {
+  String url, clockThemeId;
+  uint16_t refreshSec, pageSec;
+  uint8_t touchSensitivity;
+  bool autoRotate, touchEnabled;
+  void setDefaults();
+  void toJson(JsonObject o) const;
+  void fromJson(JsonObjectConst o);
+};
+
 // ---- Clock / night mode slice (device-wide) --------------------------------
 struct ClockSettings {
   String   tz;            // IANA display name, e.g. "Europe/Rome" (UI round-trip)
@@ -194,7 +205,7 @@ struct Settings {
 
   // --- Carousel (mode == MODE_CAROUSEL): dwell + which features rotate ---
   uint16_t carouselSec;
-  bool carouselTicker, carouselUsage, carouselRadar, carouselHa;
+  bool carouselTicker, carouselUsage, carouselRadar, carouselHa, carouselAgents;
 
   // --- Shared HTTP / display ---
   uint16_t httpTimeout; // ms
@@ -206,6 +217,7 @@ struct Settings {
   // --- Feature slices ---
   TickerSettings  ticker;
   UsageSettings   usage;
+  AgentsSettings  agents;
   RadarSettings   radar;
   HaSettings      ha;        // MQTT broker for HA screens
   ClockSettings   clock;

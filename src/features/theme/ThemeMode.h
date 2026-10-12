@@ -33,13 +33,16 @@ class ThemeMode : public DisplayMode {
     messageDrawn_ = false;
   }
   const String& error() const { return error_; }
+  void setRuntimeId(const String& id) { runtimeId_ = id; }
+  void clearRuntimeId() { runtimeId_ = ""; }
+  const String& runtimeId() const { return runtimeId_; }
  private:
   void unload();
   void refreshData();
   smalltv::Engine engine_;
   std::unique_ptr<ThemeFile> file_;
   std::unique_ptr<smalltv::Package> package_;
-  String loadedId_, error_;
+  String loadedId_, error_, runtimeId_;
   std::vector<uint32_t> dataNextMs_;
   std::vector<bool> dataScheduled_;
   std::vector<smalltv::ThemeValue> dataValues_;

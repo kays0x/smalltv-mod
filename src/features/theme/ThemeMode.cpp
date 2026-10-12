@@ -91,7 +91,8 @@ void ThemeMode::refreshData() {
 // unloading first; otherwise leaves the loaded package alone and only marks
 // the engine's next update() as a full repaint.
 void ThemeMode::invalidate(const Settings& s) {
-  if (loadedId_ != s.themeId || s.mode != MODE_THEME) unload();
+  if (loadedId_ != (runtimeId_.length() ? runtimeId_ : s.themeId)
+      || (s.mode != MODE_THEME && !runtimeId_.length())) unload();
   // A failed load may be retried after installation or settings changes.
   if (!package_) attempted_ = false;
   engine_.invalidate();
@@ -103,20 +104,21 @@ void ThemeMode::invalidate(const Settings& s) {
 // `loadedId_` together are the load state machine; everything past the load
 // block runs every call once a package is open.
 void ThemeMode::service(const Settings& s) {
-  if (loadedId_ != s.themeId) unload();
+  const String& themeId = runtimeId_.length() ? runtimeId_ : s.themeId;
+  if (loadedId_ != themeId) unload();
   if (!attempted_) {
     attempted_ = true;
-    loadedId_ = s.themeId;
+    loadedId_ = themeId;
     std::string error;
     smalltv::Theme theme;
-    if (!smalltv::validId(s.themeId.c_str())) error = "Select an installed theme";
+    if (!smalltv::validId(themeId.c_str())) error = "Select an installed theme";
     else {
       file_.reset(new ThemeFile);
-      if (!file_->open("/themes/" + s.themeId + ".stheme")) error = "Theme file not found";
+      if (!file_->open("/themes/" + themeId + ".stheme")) error = "Theme file not found";
       else {
         package_.reset(new smalltv::Package(*file_));
         if (!package_->load(theme, error)) package_.reset();
-        else if (theme.id != s.themeId.c_str()) {
+        else if (theme.id != themeId.c_str()) {
           error = "Theme ID mismatch";
           package_.reset();
         }

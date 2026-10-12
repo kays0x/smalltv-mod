@@ -1,0 +1,117 @@
+{
+  "sampled": 1700000000,
+  "pages": [
+    {
+      "id": "mac",
+      "title": "MAC",
+      "kind": "agents",
+      "rows": [
+        {
+          "elapsed": "",
+          "project": "--",
+          "detail": "Reading activity",
+          "title": "CLAUDE",
+          "status": "OFFLINE",
+          "active": 0,
+          "waiting": 0,
+          "count": "0 active",
+          "tone": 2
+        },
+        {
+          "elapsed": "",
+          "project": "--",
+          "detail": "Reading activity",
+          "title": "CODEX",
+          "status": "OFFLINE",
+          "active": 0,
+          "waiting": 0,
+          "count": "0 active",
+          "tone": 2
+        }
+      ]
+    },
+    {
+      "id": "vps-codex",
+      "title": "VPS",
+      "kind": "agents",
+      "rows": [
+        {
+          "elapsed": "",
+          "project": "--",
+          "detail": "VPS unreachable",
+          "title": "CLAUDE",
+          "status": "OFFLINE",
+          "active": 0,
+          "waiting": 0,
+          "count": "0 active",
+          "tone": 2
+        },
+        {
+          "elapsed": "",
+          "project": "--",
+          "detail": "VPS unreachable",
+          "title": "CODEX",
+          "status": "OFFLINE",
+          "active": 0,
+          "waiting": 0,
+          "count": "0 active",
+          "tone": 2
+        }
+      ]
+    },
+    {
+      "id": "vps-pi",
+      "title": "VPS",
+      "kind": "agents",
+      "rows": [
+        {
+          "elapsed": "",
+          "project": "--",
+          "detail": "VPS unreachable",
+          "title": "CLAUDE",
+          "status": "OFFLINE",
+          "active": 0,
+          "waiting": 0,
+          "count": "0 active",
+          "tone": 2
+        },
+        {
+          "elapsed": "",
+          "project": "--",
+          "detail": "VPS unreachable",
+          "title": "PI",
+          "status": "OFFLINE",
+          "active": 0,
+          "waiting": 0,
+          "count": "0 active",
+          "tone": 2
+        }
+      ]
+    },
+    {
+      "id": "usage",
+      "title": "USAGE",
+      "kind": "usage",
+      "rows": [
+        {
+          "title": "CLAUDE",
+          "label": "5h",
+          "text": "n/a",
+          "bar": 0
+        },
+        {
+          "title": "CLAUDE",
+          "label": "7d",
+          "text": "n/a",
+          "bar": 0
+        },
+        {
+          "title": "CODEX",
+          "label": "7d",
+          "text": "n/a",
+          "bar": 0
+        }
+      ]
+    }
+  ]
+}

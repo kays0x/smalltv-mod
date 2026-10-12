@@ -1,4 +1,5 @@
 #include "Settings.h"
+#include "features/agents/AgentsData.h"
 #include "AtomicJson.h"
 #include "Platform.h"   // platformChipId() for the unique default hostname
 #include <LittleFS.h>
@@ -140,6 +141,35 @@ void UsageSettings::fromJson(JsonObjectConst o) {
 }
 
 // ===========================================================================
+// Agents slice
+// ---------------------------------------------------------------------------
+void AgentsSettings::setDefaults() {
+  url = ""; clockThemeId = "";
+  refreshSec = 5; pageSec = 20; autoRotate = true; touchEnabled = false; touchSensitivity = 88;
+}
+void AgentsSettings::toJson(JsonObject o) const {
+  o["url"] = url; o["refreshSec"] = refreshSec; o["pageSec"] = pageSec;
+  o["autoRotate"] = autoRotate; o["clockThemeId"] = clockThemeId; o["touchEnabled"] = touchEnabled; o["touchSensitivity"] = touchSensitivity;
+}
+void AgentsSettings::fromJson(JsonObjectConst o) {
+  if (o["url"].is<const char*>() && smalltv::validAgentsUrl(o["url"].as<const char*>())) url = o["url"].as<String>();
+  if (o["refreshSec"].is<int>()) refreshSec = constrain(o["refreshSec"].as<int>(), 2, 300);
+  if (o["pageSec"].is<int>()) pageSec = constrain(o["pageSec"].as<int>(), 5, 3600);
+  if (o["autoRotate"].is<bool>()) autoRotate = o["autoRotate"];
+  if (o["touchEnabled"].is<bool>()) touchEnabled = o["touchEnabled"];
+  if (o["touchSensitivity"].is<int>()) touchSensitivity = constrain(o["touchSensitivity"].as<int>(), 75, 95);
+  if (o["clockThemeId"].is<const char*>()) {
+    String id = o["clockThemeId"].as<String>();
+    bool valid = id.length() <= 31;
+    for (size_t i = 0; i < id.length(); ++i) {
+      char c = id[i];
+      if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '-' || c == '_')) valid = false;
+    }
+    if (valid) clockThemeId = id;
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Clock / night mode slice
 // ===========================================================================
 static uint16_t hhmmToMin(const char* s, uint16_t fallback) {
@@ -435,6 +465,7 @@ void Settings::setDefaults() {
   themeId = "";
   carouselSec = DEFAULT_CAROUSEL_SEC;
   carouselTicker = carouselUsage = carouselRadar = carouselHa = true;
+  carouselAgents = false;
   httpTimeout = DEFAULT_HTTP_TIMEOUT;
 
   brightness = DEFAULT_BRIGHTNESS;
@@ -444,6 +475,7 @@ void Settings::setDefaults() {
 
   ticker.setDefaults();
   usage.setDefaults();
+  agents.setDefaults();
   radar.setDefaults();
   ha.setDefaults();
   clock.setDefaults();
@@ -514,7 +546,8 @@ void settingsToJson(const Settings& s, JsonObject root, bool includeSecrets) {
 
   // Mode + shared HTTP/display
   root["themeId"] = s.themeId;
-  root["mode"]              = (s.mode == MODE_THEME)    ? "theme"
+  root["mode"]              = (s.mode == MODE_AGENTS)   ? "agents"
+                            : (s.mode == MODE_THEME)    ? "theme"
                             : (s.mode == MODE_RADAR)    ? "radar"
                             : (s.mode == MODE_USAGE)    ? "usage"
                             : (s.mode == MODE_HA)       ? "ha"
@@ -524,6 +557,7 @@ void settingsToJson(const Settings& s, JsonObject root, bool includeSecrets) {
   root["carouselUsage"]     = s.carouselUsage;
   root["carouselRadar"]     = s.carouselRadar;
   root["carouselHa"]        = s.carouselHa;
+  root["carouselAgents"]    = s.carouselAgents;
   root["httpTimeout"]       = s.httpTimeout;
   root["brightness"]        = s.brightness;
   root["autoBrightness"]    = s.autoBrightness;
@@ -533,6 +567,7 @@ void settingsToJson(const Settings& s, JsonObject root, bool includeSecrets) {
   // Feature slices
   s.ticker.toJson(root["ticker"].to<JsonObject>());
   s.usage.toJson(root["usage"].to<JsonObject>());
+  s.agents.toJson(root["agents"].to<JsonObject>());
   s.radar.toJson(root["radar"].to<JsonObject>());
   s.ha.toJson(root["ha"].to<JsonObject>(), includeSecrets);
   s.clock.toJson(root["clock"].to<JsonObject>());
@@ -587,7 +622,8 @@ void settingsApplyJson(Settings& s, JsonObjectConst root) {
 
   if (root["mode"].is<const char*>()) {
     String m = root["mode"].as<String>();
-    s.mode = m.equalsIgnoreCase("theme")    ? MODE_THEME
+    s.mode = m.equalsIgnoreCase("agents")   ? MODE_AGENTS
+           : m.equalsIgnoreCase("theme")    ? MODE_THEME
            : m.equalsIgnoreCase("radar")    ? MODE_RADAR
            : m.equalsIgnoreCase("usage")    ? MODE_USAGE
            : m.equalsIgnoreCase("ha")       ? MODE_HA
@@ -607,6 +643,7 @@ void settingsApplyJson(Settings& s, JsonObjectConst root) {
   if (root["carouselUsage"].is<bool>())   s.carouselUsage = root["carouselUsage"];
   if (root["carouselRadar"].is<bool>())   s.carouselRadar = root["carouselRadar"];
   if (root["carouselHa"].is<bool>())      s.carouselHa = root["carouselHa"];
+  if (root["carouselAgents"].is<bool>())  s.carouselAgents = root["carouselAgents"];
 
   if (root["httpTimeout"].is<int>())        s.httpTimeout = constrain((int)root["httpTimeout"], 1000, 20000);
   if (root["brightness"].is<int>())         s.brightness = constrain((int)root["brightness"], 0, 100);
@@ -621,6 +658,7 @@ void settingsApplyJson(Settings& s, JsonObjectConst root) {
   s.ticker.fromJson(t);
   JsonObjectConst u = root["usage"].is<JsonObjectConst>() ? root["usage"].as<JsonObjectConst>() : root;
   s.usage.fromJson(u);
+  if (root["agents"].is<JsonObjectConst>()) s.agents.fromJson(root["agents"].as<JsonObjectConst>());
   // Radar has no legacy flat layout; only apply when its nested object is present.
   if (root["radar"].is<JsonObjectConst>()) s.radar.fromJson(root["radar"].as<JsonObjectConst>());
   // HA has no legacy flat layout either; only apply when its object is present.

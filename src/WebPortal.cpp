@@ -20,12 +20,18 @@
 #include "features/theme/ThemeWeb.h"
 #endif
 #include "SettingsTransaction.h"
+#include "Touch.h"
+#if WITH_AGENTS
+#include "features/agents/AgentsMode.h"
+#endif
 #if WITH_HA
 #include "HaScreens.h"
 #include "MqttClient.h"
 #endif
 
 // Defined in main.cpp — re-init every mode + force a repaint after a config change.
+extern bool appAgentsClockActive();
+extern bool appAgentsControl(const char* action, String& error);
 extern void appInvalidate();
 extern const char* appResetReason();   // last reset reason (diagnostics)
 extern void appApplyBrightness();   // main.cpp: re-resolve effective brightness now
@@ -85,6 +91,7 @@ static void handleGetConfig() {
   feat["radar"]  = (bool)WITH_RADAR;
   feat["ha"]     = (bool)WITH_HA;
   feat["theme"]  = (bool)WITH_THEME;
+  feat["agents"] = (bool)WITH_AGENTS;
   // WireGuard is a per-chip decision rather than a per-feature one: it is
   // compiled only where the image has room for it (the ESP32-C2 build).
 #if defined(SMALLTV_WIREGUARD)
@@ -109,6 +116,9 @@ static void handleStatus() {
   JsonObject o = doc.to<JsonObject>();
   o["fw"] = FW_NAME;
   o["version"] = FW_VERSION;
+  o["forkBuild"] = FORK_BUILD;
+  o["agentsClockActive"] = appAgentsClockActive();
+  touchStatus(o["touch"].to<JsonObject>(), *S);
   o["variant"] = FW_VARIANT;   // which release image this is, e.g. "esp8266-lean"
   o["repo"] = REPO_URL;
   if (g_updateMsg.length()) o["updateMsg"] = g_updateMsg;
@@ -202,6 +212,36 @@ static String wgFingerprint(const Settings& s) {
   return f;
 }
 
+static void handleTouchStatus() {
+  if (!requireAuth()) return;
+  JsonDocument doc; touchStatus(doc.to<JsonObject>(), *S); sendJson(doc);
+}
+static void handleTouchCalibrate() {
+  if (!requireAuth()) return;
+  touchCalibrate();
+  JsonDocument doc; JsonObject o = doc.to<JsonObject>();
+  touchStatus(o, *S); o["ok"] = true; sendJson(doc);
+}
+#if WITH_AGENTS
+static void handleAgentsStatus() {
+  if (!requireAuth()) return;
+  JsonDocument doc; JsonObject o = doc.to<JsonObject>();
+  g_agentsMode.status(o); o["clockActive"] = appAgentsClockActive(); sendJson(doc);
+}
+static void handleAgentsControl() {
+  if (!requireAuth()) return;
+  JsonDocument body;
+  if (!server.hasArg("plain") || server.arg("plain").length() > 128 || deserializeJson(body, server.arg("plain"))) {
+    server.send(400, "application/json", "{\"ok\":false,\"error\":\"Invalid control body\"}"); return;
+  }
+  String error;
+  bool ok = appAgentsControl(body["action"] | "", error);
+  JsonDocument doc; JsonObject o = doc.to<JsonObject>(); g_agentsMode.status(o);
+  o["ok"] = ok; if (!ok) o["error"] = error;
+  sendJson(doc, ok ? 200 : 400);
+}
+#endif
+
 static void handlePostConfig() {
   if (!requireAuth()) return;
   if (!server.hasArg("plain")) { server.send(400, "text/plain", "no body"); return; }
@@ -222,6 +262,7 @@ static void handlePostConfig() {
     return;
   }
 
+  touchCalibrate();
   // Live apply (no reboot needed for these)
   clockReapply(*S);         // re-arm SNTP iff the timezone changed
   appApplyBrightness();     // apply effective brightness (respects night/auto/manual)
@@ -503,6 +544,12 @@ void webPortalBegin(Settings& settings) {
   server.on("/api/import", HTTP_POST, handleImport);
   server.on("/api/checkupdate", HTTP_GET, handleCheckUpdate);
   server.on("/api/selfupdate", HTTP_POST, handleSelfUpdate);
+  server.on("/api/touch", HTTP_GET, handleTouchStatus);
+  server.on("/api/touch/calibrate", HTTP_POST, handleTouchCalibrate);
+#if WITH_AGENTS
+  server.on("/api/agents/status", HTTP_GET, handleAgentsStatus);
+  server.on("/api/agents/control", HTTP_POST, handleAgentsControl);
+#endif
   server.on("/api/usage", HTTP_POST, handleUsagePush);   // daemon pushes usage here
 #if WITH_HA
   server.on("/api/ha/clear", HTTP_POST, handleHaClear);  // purge HA screens (device + broker retained)

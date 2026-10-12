@@ -19,6 +19,10 @@
 #include "Mode.h"
 #include "Clock.h"
 #include "WgClient.h"
+#include "Touch.h"
+#if WITH_AGENTS
+#include "features/agents/AgentsMode.h"
+#endif
 #if WITH_THEME
 #include "features/theme/ThemeMode.h"
 #endif
@@ -44,6 +48,9 @@
 // The compiled-in features, in display order. main.cpp holds no per-feature
 // state of its own — each mode owns its fetch/render/dirty tracking.
 static DisplayMode* kModes[] = {
+#if WITH_AGENTS
+  &g_agentsMode,
+#endif
 #if WITH_TICKER
   &g_tickerMode,
 #endif
@@ -70,6 +77,7 @@ static uint32_t g_carSwitch = 0;
 
 static bool carouselHas(const Settings& s, const DisplayMode* m) {
   switch (m->modeConst()) {
+    case MODE_AGENTS: return s.carouselAgents;
     case MODE_STOCKS: return s.carouselTicker;
     case MODE_USAGE:  return s.carouselUsage;
     case MODE_RADAR:  return s.carouselRadar;
@@ -94,7 +102,12 @@ static void carouselNext(const Settings& s) {
   }
 }
 
+static bool g_clockFromAgents = false;
+
 static DisplayMode* activeMode(const Settings& s) {
+#if WITH_THEME
+  if (g_clockFromAgents && s.mode == MODE_AGENTS) return &g_themeMode;
+#endif
   if (s.mode == MODE_CAROUSEL && kModeCount > 0) {
     if (g_carSwitch == 0) g_carSwitch = millis();
     if (!carouselHas(s, kModes[g_carIdx])) carouselNext(s);   // settings changed
@@ -114,6 +127,8 @@ static String   g_resetReason;        // why the chip last reset (diagnostics)
 static bool     g_safeMode = false;   // last reset was an exception -> don't re-enter the crash
 static char     g_epcStr[16] = "";
 static char     g_addrStr[16] = "";
+static uint32_t g_touchWakeStarted = 0;
+static bool g_touchWakeActive = false;
 static int g_lastBr = -1;        // last effective brightness written (-1 = none yet)
 #if HAS_LDR
 static uint32_t g_lastAutoBr = 0;
@@ -122,8 +137,13 @@ static uint8_t  g_ldrCache   = DEFAULT_BRIGHTNESS;   // last LDR reading (2 s ca
 
 // Single brightness resolver: night mode overrides auto-brightness overrides the
 // manual level. Only writes the PWM when the effective target changes.
+static bool appTouchAwake() {
+  if (g_touchWakeActive && uint32_t(millis() - g_touchWakeStarted) >= 60000) g_touchWakeActive = false;
+  return g_touchWakeActive;
+}
+
 static uint8_t appEffectiveBrightness() {
-  if (clockNightActive()) return g_settings.clock.nightLevel;
+  if (clockNightActive() && !appTouchAwake()) return g_settings.clock.nightLevel;
 #if HAS_LDR
   if (g_settings.autoBrightness) {
     if (millis() - g_lastAutoBr > 2000) {
@@ -147,11 +167,68 @@ void appApplyBrightness() {
 
 // Exposed to the web portal (/api/status) so the last reset reason is visible.
 const char* appResetReason() { return g_resetReason.c_str(); }
+bool appAgentsClockActive() { return g_clockFromAgents; }
 
 // Called by the web portal after settings are applied: re-init every mode and
 // force a fresh repaint so a mode/URL/symbol change takes effect immediately.
 void appInvalidate() {
+  g_clockFromAgents = false;
+#if WITH_THEME
+  g_themeMode.clearRuntimeId();
+#endif
   for (size_t i = 0; i < kModeCount; i++) kModes[i]->invalidate(g_settings);
+}
+
+// Hardware and HTTP controls share one path. Gestures change RAM only; settings
+// flash remains untouched, so frequent taps cannot wear the configuration out.
+bool appAgentsControl(const char* action, String& error) {
+#if WITH_AGENTS
+  if (!strcmp(action, "next")) { g_agentsMode.next(); return true; }
+  if (!strcmp(action, "toggleRotation")) { g_agentsMode.toggleRotation(); return true; }
+  if (!strcmp(action, "toggleClock")) {
+#if WITH_THEME
+    if (g_clockFromAgents) {
+      g_clockFromAgents = false; g_themeMode.clearRuntimeId();
+      g_themeMode.invalidate(g_settings); g_agentsMode.wake(g_settings); return true;
+    }
+    if (g_settings.mode != MODE_AGENTS) { error = "Select Agents mode first"; return false; }
+    if (!g_settings.agents.clockThemeId.length()) { error = "No clock theme configured"; return false; }
+    {
+      ThemeFile file;
+      smalltv::Theme theme;
+      std::string detail;
+      if (!file.open("/themes/" + g_settings.agents.clockThemeId + ".stheme")) {
+        error = "Clock theme not installed"; return false;
+      }
+      smalltv::Package package(file);
+      if (!package.load(theme, detail) || theme.id != g_settings.agents.clockThemeId.c_str()) {
+        error = "Invalid clock theme"; return false;
+      }
+    }
+    g_clockFromAgents = true;
+    g_themeMode.setRuntimeId(g_settings.agents.clockThemeId);
+    g_themeMode.invalidate(g_settings); return true;
+#else
+    error = "Clock themes not compiled in"; return false;
+#endif
+  }
+#endif
+  error = "Unsupported action"; return false;
+}
+
+static void appTouch() {
+  touchService(g_settings);
+  auto event = touchTake();
+  if (event == TouchGesture::None) return;
+  if (clockNightActive() && !appTouchAwake()) {
+    g_touchWakeStarted = millis(); g_touchWakeActive = true;
+    appApplyBrightness(); return;
+  }
+  if (g_settings.mode != MODE_AGENTS) return;
+  String error;
+  if (event == TouchGesture::Single && !g_clockFromAgents) appAgentsControl("next", error);
+  else if (event == TouchGesture::Double) appAgentsControl("toggleClock", error);
+  else if (event == TouchGesture::Hold && !g_clockFromAgents) appAgentsControl("toggleRotation", error);
 }
 
 static void bootProgress(const char* msg) {
@@ -186,6 +263,7 @@ void setup() {
   Serial.println("[boot] settings");
   settingsBegin();
   loadSettings(g_settings);
+  touchService(g_settings);
 
   Serial.println("[boot] display");
   gfxBegin(g_settings);
@@ -246,6 +324,7 @@ void setup() {
 void loop() {
   netLoop();
   webPortalLoop();
+  appTouch();
 
   if (webPortalRebootDue()) {
     delay(120);
