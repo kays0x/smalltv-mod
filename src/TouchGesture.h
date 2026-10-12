@@ -5,6 +5,7 @@
 class TouchGesture {
  public:
   enum Event { None, Single, Double, Hold };
+  static constexpr uint32_t DoubleWindowMs = 250;
   bool pressed = false, calibrated = false;
   uint32_t baseline = 0, raw = 0;
   void setThreshold(uint8_t percent) { thresholdPercent_ = percent < 75 ? 75 : percent > 95 ? 95 : percent; }
@@ -35,7 +36,8 @@ class TouchGesture {
       pressed = candidate_;
       if (pressed) {
         downAt_ = now; held_ = false;
-        doubleCandidate_ = pending_ && uint32_t(now - releasedAt_) <= 350;
+        // Debounce must not shorten the user's interval for the second press.
+        doubleCandidate_ = pending_ && uint32_t(candidateAt_ - releasedAt_) <= DoubleWindowMs;
       }
       else if (!held_ && uint32_t(now - downAt_) >= 20) {
         if (doubleCandidate_) {
@@ -49,7 +51,8 @@ class TouchGesture {
     if (pressed && !held_ && uint32_t(now - downAt_) >= 900) {
       held_ = true; pending_ = false; result = Hold;
     }
-    if (pending_ && !pressed && uint32_t(now - releasedAt_) > 350) {
+    const bool awaitingSecondPress = candidate_ && uint32_t(candidateAt_ - releasedAt_) <= DoubleWindowMs;
+    if (pending_ && !pressed && !awaitingSecondPress && uint32_t(now - releasedAt_) > DoubleWindowMs) {
       pending_ = false; result = Single;
     }
     if (!pressed && !candidate_ && value >= baseline * 90 / 100 && value <= baseline * 110 / 100)

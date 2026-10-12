@@ -13,7 +13,7 @@
 // ---------------------------------------------------------------------------
 #define FW_NAME     "smalltv-mod"
 #define FW_VERSION  "2.16.0"
-#define FORK_BUILD  "agents-tap-3"
+#define FORK_BUILD  "agents-tap-4"
 
 // Project / update references (shown in the web UI; used by the GitHub self-update)
 #define REPO_URL      "https://github.com/kays0x/smalltv-mod"

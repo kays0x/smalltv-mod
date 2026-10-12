@@ -72,6 +72,36 @@ int main(int argc, char** argv) {
   }
   sample(sensor, 1230, 2); sample(sensor, 1620, 2);
   assert(sample(sensor, 1620, 19) == TouchGesture::Single);
+  TouchGesture responsive;
+  for (uint32_t t = 0; t < 1000; t += 20) responsive.update(100, t);
+  responsive.update(50, 1000); responsive.update(50, 1020);
+  responsive.update(100, 1040); responsive.update(100, 1060);
+  assert(responsive.update(100, 1300) == TouchGesture::None);
+  assert(responsive.update(100, 1320) == TouchGesture::Single);
+  // The second press must fit the window; its release may happen later.
+  responsive.update(50, 1500); responsive.update(50, 1520);
+  responsive.update(100, 1540); responsive.update(100, 1560);
+  responsive.update(50, 1750); responsive.update(50, 1770);
+  responsive.update(100, 1900);
+  assert(responsive.update(100, 1920) == TouchGesture::Double);
+  responsive.update(50, 2100); responsive.update(50, 2120);
+  responsive.update(100, 2140); responsive.update(100, 2160);
+  responsive.update(50, 2400); responsive.update(50, 2420);
+  responsive.update(100, 2520);
+  assert(responsive.update(100, 2540) == TouchGesture::Double);
+  responsive.update(50, 2700); responsive.update(50, 2720);
+  responsive.update(100, 2740); responsive.update(100, 2760);
+  assert(responsive.update(50, 3009) == TouchGesture::None);
+  assert(responsive.update(50, 3028) == TouchGesture::None);
+  responsive.update(50, 3048); responsive.update(100, 3120);
+  assert(responsive.update(100, 3140) == TouchGesture::Double);
+  responsive.update(50, 3300); responsive.update(50, 3320);
+  responsive.update(100, 3340); responsive.update(100, 3360);
+  assert(responsive.update(50, 3620) == TouchGesture::Single);
+  responsive.update(50, 3640); responsive.update(100, 3720);
+  assert(responsive.update(100, 3740) == TouchGesture::None);
+  assert(responsive.update(100, 3990) == TouchGesture::None);
+  assert(responsive.update(100, 4010) == TouchGesture::Single);
   std::string payload = R"({"sampled":1791760627,"pages":[{"id":"mac","title":"MAC","kind":"agents","rows":[{"title":"CLAUDE","status":"WAITING","count":"1 waiting","detail":"Answer needed","project":"smalltv-mod","elapsed":"","tone":2}]},{"id":"usage","title":"USAGE","kind":"usage","rows":[{"title":"CLAUDE","label":"5h","text":"25%","bar":25}]}]})";
   smalltv::AgentsData data;
   assert(smalltv::parseAgents(payload.c_str(), payload.size(), data));

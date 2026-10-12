@@ -73,6 +73,16 @@ release thresholds reduce repeated triggers from a noisy reading.
 | Hold | Pause or resume automatic page rotation |
 | Tap while dimmed | Wake first, without advancing a page |
 
+A single tap waits 250 milliseconds after release to distinguish it from a
+double tap. Make the second press within that interval. Holding for about one
+second toggles rotation.
+
+On ESP32 boards with enough free heap, Agents composes each repaint in a
+temporary 57,600-byte indexed canvas, then uploads RGB565 pixel blocks through
+a 3,840-byte transfer buffer. The panel keeps its previous page until the new
+pixels arrive, avoiding a blank screen between pages. Both buffers are freed
+after painting. Low-memory conditions and ESP8266 boards use direct rendering.
+
 Install a clock package in **Display → Theme clocks**, then choose it under
 **Agents → Clock for double tap** and save. This choice does not activate the
 clock immediately. The **Switch clock / agents** web button exercises the same
@@ -98,7 +108,7 @@ return JSON with an `error` field.
 
 | Method and route | Request or result |
 | --- | --- |
-| `GET /api/agents/status` | `valid`, `fresh`, `error`, `ageSec`, `pages`, zero-based `page`, `title`, `autoRotate`, `fetching`, `clockActive`, `fullPaints`, `cardPaints` |
+| `GET /api/agents/status` | `valid`, `fresh`, `error`, `ageSec`, `pages`, zero-based `page`, `title`, `autoRotate`, `fetching`, `clockActive`, `fullPaints`, `cardPaints`, `bufferedPaints`, `fallbackPaints`, `lastPaintMs`, `lastPaintBuffered`, `lastPaintBatched`, `lastBufferBytes`, `lastScratchBytes`, `bufferRetainedBytes`, `bufferCapacityBytes` |
 | `POST /api/agents/control` | JSON `{ "action": "next" }`, `toggleRotation`, or `toggleClock`; returns current status |
 | `GET /api/touch` | `supported`, `enabled`, `raw`, `baseline`, `min`, `max`, `pressed`, `calibrated`, `pressThreshold`, `releaseThreshold`, `thresholdPercent`, `releasePercent`, `single`, `double`, `hold`, `lastGesture`, `samplerRunning`, `samples`, `sampleAgeMs`, `queued` |
 | `POST /api/touch/calibrate` | JSON `{}`; calibrates an untouched sensor and returns its status |

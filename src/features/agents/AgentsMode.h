@@ -26,6 +26,8 @@ class AgentsMode : public DisplayMode {
   std::shared_ptr<AgentsFetch> fetch_;
   uint32_t nextPoll_ = 0, lastOk_ = 0, lastPage_ = 0;
   uint32_t fullPaints_ = 0, cardPaints_ = 0;
+  uint32_t bufferedPaints_ = 0, fallbackPaints_ = 0, lastPaintMs_ = 0;
+  bool lastPaintBuffered_ = false, waitingPainted_ = false, waitingError_ = false;
   uint8_t page_ = 0, paintedPages_ = 0;
   smalltv::VisibleAgentPage painted_;
   bool paintedValid_ = false, paintedRotate_ = false, forceFull_ = true;

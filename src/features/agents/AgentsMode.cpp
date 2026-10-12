@@ -2,6 +2,7 @@
 #if WITH_AGENTS
 #include "Platform.h"
 #include "Gfx.h"
+#include "AgentsRender.h"
 #include <Arduino_GFX_Library.h>
 #include <new>
 #include <algorithm>
@@ -119,7 +120,7 @@ void AgentsMode::invalidate(const Settings& s) {
   if (fetch_) fetch_->cancelled.store(true);
   data_.reset(); page_ = 0; lastOk_ = 0;
   rotate_ = s.agents.autoRotate; dirty_ = true; error_ = false; wasFresh_ = false;
-  forceFull_ = true; paintedValid_ = false;
+  forceFull_ = true; paintedValid_ = false; waitingPainted_ = false;
   nextPoll_ = millis(); lastPage_ = millis();
 }
 bool AgentsMode::fresh() const {
@@ -148,6 +149,17 @@ void AgentsMode::status(JsonObject o) const {
   o["title"] = data_ ? data_->pages[page_].title : "";
   o["autoRotate"] = rotate_; o["fetching"] = bool(fetch_);
   o["fullPaints"] = fullPaints_; o["cardPaints"] = cardPaints_;
+  o["bufferedPaints"] = bufferedPaints_; o["fallbackPaints"] = fallbackPaints_;
+  o["lastPaintMs"] = lastPaintMs_; o["lastPaintBuffered"] = lastPaintBuffered_;
+  o["lastBufferBytes"] = lastPaintBuffered_ ? smalltv::AgentsCanvasBytes : 0;
+  o["lastScratchBytes"] = lastPaintBuffered_ ? smalltv::AgentsStripeBytes : 0;
+  o["lastPaintBatched"] = lastPaintBuffered_;
+  o["bufferRetainedBytes"] = 0; // transient canvas has already been freed
+#if !defined(SMALLTV_ESP8266)
+  o["bufferCapacityBytes"] = smalltv::AgentsCanvasBytes;
+#else
+  o["bufferCapacityBytes"] = 0;
+#endif
 }
 void AgentsMode::service(const Settings& s) {
   if (fetch_ && fetch_->done.load(std::memory_order_acquire)) {
@@ -185,28 +197,85 @@ void AgentsMode::service(const Settings& s) {
   if (dirty_) { draw(); dirty_ = false; }
 }
 void AgentsMode::draw() {
-  Arduino_GFX* gfx = gfxDev(); if (!gfx) return;
+  Arduino_GFX* physical = gfxDev(); if (!physical) return;
+  const uint32_t started = millis();
+  if (!data_ && !forceFull_ && waitingPainted_ && waitingError_ == error_) return;
+  smalltv::VisibleAgentPage page;
+  smalltv::AgentVisibleChanges changes;
+  if (data_) {
+    page = smalltv::agentVisiblePage(data_->pages[page_], !fresh());
+    changes = smalltv::agentVisibleChanges(painted_, page);
+  }
+  const bool full = data_ ? forceFull_ || !paintedValid_ || changes.layout : forceFull_ || paintedValid_;
+  const bool iconChanged = full || rotate_ != paintedRotate_;
+  const bool dotsChanged = data_ && (full || paintedPages_ != data_->pageCount);
+  auto plan = smalltv::agentsPaintPlan(full, changes.header, iconChanged,
+                                       changes.rows, page.rowCount, page.usage, dotsChanged);
+  if (!data_ && !full) { plan.count = 0; plan.add(8, 62, 224, 114); }
+  if (!plan.count) return;
+
+  Arduino_GFX* gfx = physical;
+#if !defined(SMALLTV_ESP8266)
+  // Retain no framebuffer between paints: Pixel Room and network workers need
+  // this heap when Agents is hidden. Indexed pixels cost half an RGB565 frame.
+  std::unique_ptr<Arduino_Canvas_Indexed> canvas;
+  std::unique_ptr<uint16_t[]> stripe;
+  constexpr size_t Allocation = smalltv::AgentsCanvasBytes + smalltv::AgentsStripeBytes + sizeof(Arduino_Canvas_Indexed);
+  if (ESP.getFreeHeap() >= Allocation + 32768 && ESP.getMaxAllocHeap() >= Allocation + 1024) {
+    stripe.reset(new(std::nothrow) uint16_t[smalltv::AgentsStripePixels]);
+    if (stripe) canvas.reset(new(std::nothrow) Arduino_Canvas_Indexed(240, 240, physical));
+    if (canvas && !canvas->begin(GFX_SKIP_OUTPUT_BEGIN)) canvas.reset();
+    if (canvas) gfx = canvas.get();
+    else stripe.reset();
+  }
+#endif
+  gfx->setTextWrap(false);
   const uint16_t ink = gfxTint(0x0862), panel = gfxTint(0x18C4), edge = gfxTint(0x2946);
   const uint16_t paper = gfxTint(0xFF9B), muted = gfxTint(0x9492);
   const uint16_t mint = gfxTint(0x8F56), amber = gfxTint(0xFE09);
+#if !defined(SMALLTV_ESP8266)
+  if (canvas) canvas->fillScreen(ink);
+#endif
+  auto submit = [&]() {
+#if !defined(SMALLTV_ESP8266)
+    if (canvas) {
+      for (uint8_t i = 0; i < plan.count; ++i) {
+        const auto& region = plan.regions[i];
+        for (int16_t row = 0; row < region.height;) {
+          uint8_t rows = smalltv::agentsConvertStripe(canvas->getFramebuffer(), canvas->getColorIndex(),
+              region, row, stripe.get(), smalltv::AgentsStripePixels);
+          if (!rows) break;
+          // Keep this pointer mutable: the const/PROGMEM overload writes each
+          // pixel separately, while this RAM overload batches SPI writePixels.
+          physical->draw16bitRGBBitmap(region.x, region.y + row, stripe.get(), region.width, rows);
+          row += rows;
+        }
+      }
+      ++bufferedPaints_; lastPaintBuffered_ = true;
+      canvas.reset(); stripe.reset();
+    } else { ++fallbackPaints_; lastPaintBuffered_ = false; }
+#else
+    lastPaintBuffered_ = false;
+#endif
+    lastPaintMs_ = uint32_t(millis() - started);
+  };
   if (!data_) {
-    if (forceFull_ || paintedValid_) { gfx->fillScreen(ink); ++fullPaints_; }
+    if (full) { gfx->fillScreen(ink); ++fullPaints_; }
     forceFull_ = false; paintedValid_ = false;
     gfx->fillRoundRect(8, 62, 224, 114, 12, panel);
-    gfxDrawCentered("AGENTS", 79, 4, paper);
-    gfxDrawCentered(error_ ? "FEED OFFLINE" : "CONNECTING", 137, 2, amber);
-    return;
+    text(gfx, "AGENTS", (240 - gfxTextW("AGENTS", 4)) / 2, 79, 224, 4, paper);
+    const char* message = error_ ? "FEED OFFLINE" : "CONNECTING";
+    text(gfx, message, (240 - gfxTextW(message, 2)) / 2, 137, 224, 2, amber);
+    waitingPainted_ = true; waitingError_ = error_;
+    submit(); return;
   }
-  auto page = smalltv::agentVisiblePage(data_->pages[page_], !fresh());
-  auto changes = smalltv::agentVisibleChanges(painted_, page);
-  const bool full = forceFull_ || !paintedValid_ || changes.layout;
   if (full) { gfx->fillScreen(ink); ++fullPaints_; }
   if (full || changes.header) {
     if (!full) gfx->fillRect(0, 0, 198, 35, ink);
     text(gfx, page.title, 12, 7, 174, 3, paper);
   }
   // Rotation is an icon, so every word on the physical display stays readable.
-  if (full || rotate_ != paintedRotate_) {
+  if (iconChanged) {
     gfx->fillRect(203, 3, 33, 33, ink);
     gfx->fillCircle(218, 19, 13, edge);
     if (rotate_) gfx->fillTriangle(215, 12, 215, 26, 224, 19, mint);
@@ -247,7 +316,7 @@ void AgentsMode::draw() {
       text(gfx, row.count, 18, top + 68, 208, 2, paper);
     }
   }
-  if (full || paintedPages_ != data_->pageCount) {
+  if (dotsChanged) {
     if (!full) gfx->fillRect(0, 226, 240, 14, ink);
     for (uint8_t i = 0; i < data_->pageCount; ++i) {
       const int x = 120 + int(i) * 16 - int(data_->pageCount - 1) * 8;
@@ -255,6 +324,7 @@ void AgentsMode::draw() {
     }
   }
   painted_ = page; paintedPages_ = data_->pageCount;
-  paintedRotate_ = rotate_; paintedValid_ = true; forceFull_ = false;
+  paintedRotate_ = rotate_; paintedValid_ = true; forceFull_ = false; waitingPainted_ = false;
+  submit();
 }
 #endif
